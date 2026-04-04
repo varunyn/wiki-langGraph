@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local env (may contain API keys)
+.env
+
+# Optional file logs (see WIKI_LOG_FILE)
+logs/
+.cursor/
+.agents/
+
+# Incremental compile manifest (local cache; default under data/)
+data/.wiki-langgraph/
