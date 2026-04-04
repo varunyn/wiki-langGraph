@@ -3,6 +3,7 @@ name = "wiki-langgraph"
 version = "0.1.0"
 description = "LangGraph pipeline: ingest sources, compile Obsidian-style wiki, index, CLI agent hooks"
 readme = "README.md"
+license = { file = "LICENSE" }
 authors = [{ name = "wiki-langgraph contributors" }]
 requires-python = ">=3.12"
 dependencies = [

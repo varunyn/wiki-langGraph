@@ -123,3 +123,7 @@ For semantics of compile steps and provenance (`compiled_from:`, backlinks vs se
 ```bash
 uv run pytest
 ```
+
+## License
+
+[MIT](LICENSE)
