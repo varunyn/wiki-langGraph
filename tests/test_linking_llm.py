@@ -18,9 +18,10 @@ def test_suggest_semantic_related_passes_expected_chatopenai_kwargs() -> None:
             captured.update(kwargs)
 
         def with_structured_output(
-            self, schema: type[SemanticRelatedOutput]
+            self, schema: type[SemanticRelatedOutput], **kwargs: object
         ) -> FakeStructuredChatOpenAI:
             schema_holder["schema"] = schema
+            assert kwargs == {}
             return FakeStructuredChatOpenAI()
 
     settings = Settings(
@@ -58,7 +59,7 @@ def test_suggest_semantic_related_returns_empty_on_llm_error() -> None:
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def with_structured_output(self, _schema: object) -> FakeStructuredChatOpenAI:
+        def with_structured_output(self, _schema: object, **_kwargs: object) -> FakeStructuredChatOpenAI:
             return FakeStructuredChatOpenAI()
 
     settings = Settings(

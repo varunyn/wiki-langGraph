@@ -21,6 +21,8 @@ Create and edit valid Obsidian Flavored Markdown. Obsidian extends CommonMark an
 
 > When choosing between wikilinks and Markdown links: use `[[wikilinks]]` for notes within the vault (Obsidian tracks renames automatically) and `[text](url)` for external URLs only.
 
+> When mentioning another note that exists in the vault, or a concept that is clearly meant to point to an in-vault note, use an actual `[[wikilink]]` instead of plain text. Do not leave navigable note references as plain prose when a wikilink can be used.
+
 ## Internal Links (Wikilinks)
 
 ```markdown

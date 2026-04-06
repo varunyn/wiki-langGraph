@@ -48,6 +48,7 @@ def author_raw_to_wiki_markdown(
     *,
     settings: Settings,
     existing_wiki_text: str | None = None,
+    known_note_titles: list[str] | None = None,
 ) -> str:
     """Call the configured chat model to compile one raw document into vault markdown.
 
@@ -67,6 +68,14 @@ def author_raw_to_wiki_markdown(
         return raw_text
 
     body = _truncate(raw_text, MAX_SOURCE_CHARS)
+    known_titles = sorted(t for t in (known_note_titles or []) if t and t != source_rel)
+    catalog_hint = ""
+    if known_titles:
+        catalog_lines = "\n".join(f"- {title}" for title in known_titles[:200])
+        catalog_hint = (
+            "KNOWN_VAULT_NOTES (use these exact titles when creating wikilinks):\n"
+            f"{catalog_lines}\n"
+        )
     enrich = (
         settings.llm_compile_enrich
         and existing_wiki_text is not None
@@ -84,12 +93,20 @@ def author_raw_to_wiki_markdown(
             "- Merge new facts and details from NEW_SOURCE into the appropriate sections.\n"
             "- Do NOT remove existing wikilinks or backlinks sections.\n"
             "- Do NOT shrink the article — only add or update.\n"
-            "- Use [[wikilinks]] only when referring to other plausible vault titles.\n"
+            "- Optimize for a clean, readable Obsidian note, not a transcript dump.\n"
+            "- Prefer concise, information-dense prose over filler or repetitive setup sentences.\n"
+            "- Keep structure useful: use headings, bullets, and callouts only when they improve scanning.\n"
+            "- When referring to another note that exists or plausibly exists in the vault, use an Obsidian [[wikilink]].\n"
+            "- Do not leave known or likely in-vault note references as plain text when a [[wikilink]] can be used.\n"
+            "- If a note is listed in KNOWN_VAULT_NOTES, use that exact title inside [[...]] rather than inventing a shorter or approximate title.\n"
+            "- Link selectively: prefer a small number of high-value wikilinks instead of linking every mention.\n"
+            "- Do not create wikilinks for incidental mentions, exhaustive lists, or examples of unrelated topics.\n"
             "- Preserve facts and citations; do not invent sources.\n"
             f"- Raw source path: `{source_rel}`\n"
             "Output only the merged markdown body."
         )
         human_content = (
+            f"{catalog_hint}\n"
             f"EXISTING_ARTICLE:\n\n{existing_body}\n\n"
             f"NEW_SOURCE:\n\n{body}"
         )
@@ -99,13 +116,20 @@ def author_raw_to_wiki_markdown(
             "Compile the SOURCE_DOCUMENT below into a single Obsidian markdown note.\n"
             "- Use YAML frontmatter when helpful (title, tags).\n"
             "- Use headings, lists, and callouts where appropriate.\n"
+            "- Produce a clean, readable note for both humans and future AI retrieval.\n"
+            "- Prefer concise, information-dense writing over filler, repetition, or generic summary phrases.\n"
+            "- Use headings only when they improve navigation; avoid unnecessary sections.\n"
             "- Preserve facts and citations from the source; do not invent sources.\n"
-            "- Use [[wikilinks]] only when referring to other notes by plausible title; "
-            "otherwise use plain text.\n"
+            "- When referring to another note that exists or plausibly exists in the vault, use an Obsidian [[wikilink]].\n"
+            "- Do not leave known or likely in-vault note references as plain text when a [[wikilink]] can be used.\n"
+            "- If a note is listed in KNOWN_VAULT_NOTES, use that exact title inside [[...]] rather than inventing a shorter or approximate title.\n"
+            "- Link selectively: prefer a small number of high-value wikilinks instead of linking every mention.\n"
+            "- Do not create wikilinks for incidental mentions, exhaustive lists, or examples of unrelated topics.\n"
+            "- Only use plain text when no clear in-vault note target exists.\n"
             f"- Source path (vault-relative raw): `{source_rel}`\n"
             "Output only the markdown body (no surrounding explanation)."
         )
-        human_content = f"SOURCE_DOCUMENT:\n\n{body}"
+        human_content = f"{catalog_hint}\nSOURCE_DOCUMENT:\n\n{body}"
 
     system = wiki_llm_system_instructions(task_hint=task, settings=settings)
 
