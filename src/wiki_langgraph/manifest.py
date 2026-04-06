@@ -125,8 +125,13 @@ def changed_md_relpaths(
 
 
 def update_hashes_for_relpaths(raw_root: Path, rels: list[str], manifest: dict[str, Any]) -> dict[str, str]:
-    """Merge current raw hashes for ``rels`` into manifest's hash map."""
-    hashes: dict[str, str] = dict(manifest.get("hashes") or {})
+    """Return manifest hashes pruned to ``rels`` and refreshed from current raw files."""
+    keep = set(rels)
+    hashes: dict[str, str] = {
+        rel: digest
+        for rel, digest in dict(manifest.get("hashes") or {}).items()
+        if rel in keep
+    }
     for rel in rels:
         p = raw_root / rel
         if p.is_file():
@@ -135,3 +140,20 @@ def update_hashes_for_relpaths(raw_root: Path, rels: list[str], manifest: dict[s
             except OSError as exc:
                 logger.debug("manifest skip %s: %s", rel, exc)
     return hashes
+
+
+def prune_semantic_edges(manifest: dict[str, Any], rels: list[str]) -> dict[str, dict[str, object]]:
+    """Return semantic edge cache pruned to existing relpaths and targets."""
+    keep = set(rels)
+    pruned: dict[str, dict[str, object]] = {}
+    for rel, entry in dict(manifest.get("semantic_edges") or {}).items():
+        if rel not in keep or not isinstance(entry, dict):
+            continue
+        pruned_entry = dict(entry)
+        edges = pruned_entry.get("edges")
+        if isinstance(edges, list):
+            pruned_entry["edges"] = [edge for edge in edges if isinstance(edge, str) and edge in keep]
+        else:
+            pruned_entry["edges"] = []
+        pruned[rel] = pruned_entry
+    return pruned

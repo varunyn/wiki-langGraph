@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from langgraph.graph import END, START, StateGraph
 
 from wiki_langgraph.config import Settings, load_settings
@@ -9,7 +11,7 @@ from wiki_langgraph.nodes import node_compile_wiki, node_index, node_ingest, nod
 from wiki_langgraph.state import WikiGraphState
 
 
-def build_graph(settings: Settings | None = None) -> object:
+def build_graph(settings: Settings | None = None):
     """Construct the ingest → compile → index → lint graph and return a compiled application."""
     cfg = settings or load_settings()
 
@@ -47,5 +49,4 @@ def run_once(settings: Settings | None = None) -> WikiGraphState:
         "index_md_written": False,
         "last_error": None,
     }
-    result: WikiGraphState = app.invoke(initial)  # type: ignore[assignment]
-    return result
+    return cast(WikiGraphState, app.invoke(initial))

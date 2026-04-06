@@ -18,6 +18,7 @@ from wiki_langgraph.llm_author import author_raw_to_wiki_markdown
 from wiki_langgraph.manifest import (
     changed_md_relpaths,
     load_manifest,
+    prune_semantic_edges,
     save_manifest,
     update_hashes_for_relpaths,
 )
@@ -154,10 +155,13 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
     )
     if needs_manifest and manifest_for_run is not None:
         new_hashes = update_hashes_for_relpaths(raw, md_only, manifest_for_run)
+        pruned_semantic_edges = prune_semantic_edges(manifest_for_run, md_only)
+        if cfg.semantic_links:
+            pruned_semantic_edges.update(prune_semantic_edges({"semantic_edges": semantic_cache}, md_only))
         save_manifest(
             manifest_path,
             new_hashes,
-            semantic_edges=semantic_cache if cfg.semantic_links else None,
+            semantic_edges=pruned_semantic_edges if cfg.semantic_links else None,
         )
     md_list = md_only
     (wiki / "Index.md").write_text(format_index_markdown(md_list, wiki_root=wiki), encoding="utf-8")

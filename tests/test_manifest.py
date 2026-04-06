@@ -7,6 +7,7 @@ from wiki_langgraph.manifest import (
     default_manifest_path,
     file_sha256,
     load_manifest,
+    prune_semantic_edges,
     save_manifest,
     update_hashes_for_relpaths,
 )
@@ -81,3 +82,30 @@ def test_load_manifest_preserves_semantic_edges(tmp_path: Path) -> None:
     save_manifest(path, {"x.md": "abc"})
     m = load_manifest(path)
     assert m["semantic_edges"] == {}
+
+
+def test_update_hashes_prunes_deleted_relpaths(tmp_path: Path) -> None:
+    """Manifest hashes should drop entries for relpaths no longer present in the run."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "keep.md").write_text("body", encoding="utf-8")
+    manifest = {"version": 1, "hashes": {"keep.md": "old", "gone.md": "stale"}}
+
+    updated = update_hashes_for_relpaths(raw, ["keep.md"], manifest)
+
+    assert "keep.md" in updated
+    assert "gone.md" not in updated
+
+
+def test_prune_semantic_edges_drops_missing_notes_and_targets() -> None:
+    """Semantic cache should keep only existing notes and surviving targets."""
+    manifest = {
+        "semantic_edges": {
+            "keep.md": {"hash": "abc", "edges": ["other.md", "gone.md"]},
+            "gone.md": {"hash": "def", "edges": ["keep.md"]},
+        }
+    }
+
+    pruned = prune_semantic_edges(manifest, ["keep.md", "other.md"])
+
+    assert pruned == {"keep.md": {"hash": "abc", "edges": ["other.md"]}}
