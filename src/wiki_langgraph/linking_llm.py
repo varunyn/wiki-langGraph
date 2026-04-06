@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
+from collections.abc import Callable
+from typing import TypedDict
+
 from wiki_langgraph.config import Settings
 from wiki_langgraph.linking import wikilink_display_name
 
@@ -14,19 +15,17 @@ MAX_BODY_CHARS = 14_000
 MAX_CATALOG_NOTES = 400
 
 
+class SemanticRelatedOutput(TypedDict):
+    related: list[str]
+
+
+ChatOpenAIFactory = Callable[..., object]
+
+
 def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max_chars - 20] + "\n\n…(truncated)…\n"
-
-
-def _parse_json_object(raw: str) -> dict[str, object]:
-    """Extract JSON object from model output (handles optional markdown fences)."""
-    text = raw.strip()
-    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if fence:
-        text = fence.group(1).strip()
-    return json.loads(text)
 
 
 def _match_catalog_entry(suggestion: str, catalog: list[str]) -> str | None:
@@ -71,10 +70,9 @@ def suggest_semantic_related(
     system = (
         "You connect notes in an Obsidian vault. Given one note's path and body, "
         "pick other notes from the CATALOG that are substantively related (themes, references, "
-        "same project, etc.). Use ONLY catalog entries. Respond with JSON only: "
-        '{"related": ["path/or/Note", ...]} using paths exactly as in the catalog lines '
+        "same project, etc.). Use ONLY catalog entries. Return `related` using paths exactly as in the catalog lines "
         "(path without .md, matching the vault-relative form). "
-        "Prefer 0–8 links; use [] if nothing fits. No prose outside JSON."
+        "Prefer 0–8 links; use [] if nothing fits."
     )
     human = (
         f"CURRENT_NOTE_PATH: {wikilink_display_name(current_relpath)}\n\n"
@@ -82,20 +80,21 @@ def suggest_semantic_related(
         f"NOTE_BODY:\n{body_t}"
     )
 
-    kwargs: dict[str, object] = {
-        "model": settings.llm_model,
-        "api_key": settings.openai_api_key,
-        "temperature": 0.2,
-        "request_timeout": settings.llm_request_timeout_sec,
-    }
-    if settings.openai_api_base:
-        kwargs["base_url"] = settings.openai_api_base
-
     try:
-        llm = ChatOpenAI(**kwargs)
-        msg = llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
-        raw = msg.content if isinstance(msg.content, str) else str(msg.content)
-        data = _parse_json_object(raw)
+        llm_factory: ChatOpenAIFactory = ChatOpenAI
+        llm_kwargs = {
+            "model": settings.llm_model,
+            "api_key": settings.openai_api_key,
+            "temperature": 0.2,
+            "request_timeout": settings.llm_request_timeout_sec,
+        }
+        if settings.openai_api_base:
+            llm_kwargs["base_url"] = settings.openai_api_base
+        llm = llm_factory(**llm_kwargs)
+        structured_llm = llm.with_structured_output(SemanticRelatedOutput)
+        data = structured_llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
+        if not isinstance(data, dict):
+            return []
         raw_list = data.get("related")
         if not isinstance(raw_list, list):
             return []
