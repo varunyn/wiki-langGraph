@@ -151,3 +151,45 @@ def test_suggest_replacement_none_when_ambiguous(tmp_path: Path) -> None:
         cutoff=0.5,
     )
     assert sug is None
+
+
+def test_lint_warns_when_note_has_no_outgoing_wikilinks(tmp_path: Path) -> None:
+    """Notes without outbound [[wikilinks]] are reported as suspect."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "solo.md").write_text("# Solo\n\nBody only.\n", encoding="utf-8")
+
+    report = run_lint(raw, wiki, ["solo.md"])
+
+    assert any(issue.code == "W_ORPHAN_NOTE" and issue.path == "solo.md" for issue in report.issues)
+
+
+def test_lint_skips_generated_index_note_for_orphan_warning(tmp_path: Path) -> None:
+    """Index notes are exempt from the zero-outgoing-links warning."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "Index.md").write_text("# Index\n\nGenerated index.\n", encoding="utf-8")
+
+    report = run_lint(raw, wiki, ["Index.md"])
+
+    assert not any(issue.code == "W_ORPHAN_NOTE" for issue in report.issues)
+
+
+def test_lint_skips_frontmatter_index_note_for_orphan_warning(tmp_path: Path) -> None:
+    """Notes explicitly marked as index notes are exempt from orphan warnings."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "summary.md").write_text(
+        "---\nwiki_langgraph_kind: index\n---\n\n# Summary\n\nNo outgoing links.\n",
+        encoding="utf-8",
+    )
+
+    report = run_lint(raw, wiki, ["summary.md"])
+
+    assert not any(issue.code == "W_ORPHAN_NOTE" for issue in report.issues)

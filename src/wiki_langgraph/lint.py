@@ -8,6 +8,7 @@ from difflib import get_close_matches
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
+from wiki_langgraph.frontmatter_graph import INDEX_KIND_VALUE, WG_KIND
 from wiki_langgraph.linking import (
     dedupe_raw_uris_for_wiki,
     extract_wikilink_targets,
@@ -77,6 +78,27 @@ def _build_catalog_labels(all_md: set[str], wiki_root: Path) -> dict[str, str]:
         label = wikilink_display_name(strip_redundant_wiki_prefix(wiki_root, rel))
         canon.setdefault(label.lower(), label)
     return canon
+
+
+def _frontmatter_kind(text: str) -> str | None:
+    """Return managed ``wiki_langgraph_kind:`` value from YAML frontmatter if present."""
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None
+    block = text[3:end]
+    for line in block.splitlines():
+        if line.lower().startswith(f"{WG_KIND}:"):
+            return line.split(":", 1)[1].strip().strip("\"'")
+    return None
+
+
+def _is_index_note(rel: str, text: str) -> bool:
+    """True when the note is the generated index or explicitly marked as an index note."""
+    if PurePosixPath(rel).name.lower() == "index.md":
+        return True
+    return _frontmatter_kind(text) == INDEX_KIND_VALUE
 
 
 def suggest_wikilink_replacement(
@@ -253,7 +275,8 @@ def run_lint(
         text = contents.get(rel)
         if text is None:
             continue
-        for target in extract_wikilink_targets(text):
+        targets = extract_wikilink_targets(text)
+        for target in targets:
             resolved = resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md)
             if not resolved:
                 report.add(
@@ -262,6 +285,13 @@ def run_lint(
                     rel,
                     f"from [[{target}]]",
                 )
+        if not targets and not _is_index_note(rel, text):
+            report.add(
+                "W_ORPHAN_NOTE",
+                "markdown note has no outgoing [[wikilinks]]",
+                rel,
+                "add at least one outbound wikilink or exclude this generated/index note",
+            )
 
     for rel in md_relpaths:
         raw_path = raw_root / rel
