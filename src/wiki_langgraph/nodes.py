@@ -8,10 +8,12 @@ from pathlib import Path
 
 from wiki_langgraph.config import Settings, load_settings
 from wiki_langgraph.linking import (
+    build_index_entries,
     compile_linked_markdown,
     dedupe_raw_uris_for_wiki,
     format_index_markdown,
     strip_redundant_wiki_prefix,
+    wikilink_display_name,
 )
 from wiki_langgraph.lint import run_lint
 from wiki_langgraph.llm_author import author_raw_to_wiki_markdown
@@ -115,6 +117,7 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
                 "set WIKI_LLM_COMPILE_MAX_WORKERS=1 (typical for local Ollama/llama-server)."
             )
         overrides: dict[str, str] = {}
+        known_note_titles = sorted(wikilink_display_name(rel) for rel in md_only)
 
         def _author_one(rel: str) -> tuple[str, str]:
             raw_text = (raw / rel).read_text(encoding="utf-8")
@@ -131,6 +134,7 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
                 rel,
                 settings=cfg,
                 existing_wiki_text=existing,
+                known_note_titles=known_note_titles,
             )
 
         if workers == 1:
@@ -164,7 +168,11 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
             semantic_edges=pruned_semantic_edges if cfg.semantic_links else None,
         )
     md_list = md_only
-    (wiki / "Index.md").write_text(format_index_markdown(md_list, wiki_root=wiki), encoding="utf-8")
+    index_entries = build_index_entries(raw, wiki, raw_uris)
+    (wiki / "Index.md").write_text(
+        format_index_markdown(md_list, wiki_root=wiki, entries=index_entries),
+        encoding="utf-8",
+    )
     compile_msg = (
         f"compile: wiki_dir={wiki} md_notes={md_n} other_files={other_n} "
         f"semantic_edges={sem_edges} index_wikilinks={len(md_list)}"

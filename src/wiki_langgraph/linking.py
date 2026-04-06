@@ -8,8 +8,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,8 @@ if TYPE_CHECKING:
     from wiki_langgraph.config import Settings
 
 from wiki_langgraph.frontmatter_graph import (
+    NOTE_CREATED,
+    NOTE_MODIFIED,
     INDEX_KIND_VALUE,
     WG_COMPILED,
     WG_KIND,
@@ -35,6 +40,20 @@ SEE_ALSO_END = "<!-- /wiki-langgraph see-also -->"
 
 SEMANTIC_IN_BEGIN = "<!-- wiki-langgraph semantic-incoming -->"
 SEMANTIC_IN_END = "<!-- /wiki-langgraph semantic-incoming -->"
+
+
+@dataclass(frozen=True)
+class IndexNoteEntry:
+    relpath: str
+    label: str
+    created: str | None = None
+    modified: str | None = None
+    compiled_from: str | None = None
+    tags: tuple[str, ...] = ()
+    explicit_links: int = 0
+    backlinks: int = 0
+    semantic_outgoing: int = 0
+    semantic_incoming: int = 0
 
 
 def _strip_managed_block(body: str, begin: str, end: str) -> str:
@@ -68,6 +87,12 @@ def _strip_generated_blocks(body: str) -> str:
     t = _strip_semantic_incoming_block(body)
     t = _strip_backlinks_block(t)
     return _strip_see_also_block(t)
+
+
+def _managed_block_body(body: str, begin: str, end: str) -> str:
+    pattern = re.compile(rf"{re.escape(begin)}\n(.*?){re.escape(end)}", flags=re.DOTALL)
+    match = pattern.search(body)
+    return match.group(1) if match else ""
 
 
 def _format_see_also_section(semantic_related: list[str], *, wiki_root: Path | None) -> str:
@@ -113,6 +138,30 @@ def _frontmatter_title(text: str) -> str | None:
         if line.lower().startswith("title:"):
             return line.split(":", 1)[1].strip().strip("\"'")
     return None
+
+
+def _frontmatter_map(text: str) -> dict[str, object]:
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, flags=re.DOTALL)
+    if not m:
+        return {}
+    try:
+        data = yaml.safe_load(m.group(1))
+    except yaml.YAMLError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): v for k, v in data.items()}
+
+
+def _normalize_tags_for_index(raw: object) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        return tuple(t.strip() for t in raw.split(",") if t.strip())
+    if isinstance(raw, list):
+        return tuple(str(t).strip() for t in raw if str(t).strip())
+    value = str(raw).strip()
+    return (value,) if value else ()
 
 
 def _collect_md_relpaths(raw_root: Path, rel_uris: list[str]) -> list[str]:
@@ -194,6 +243,31 @@ def _footer_wikilink_label(wiki_root: Path | None, rel: str) -> str:
     if wiki_root is None:
         return wikilink_display_name(rel)
     return wikilink_display_name(strip_redundant_wiki_prefix(wiki_root, rel))
+
+
+def _index_entry_for_note(
+    rel: str,
+    *,
+    wiki_root: Path | None,
+    text: str,
+    explicit_links: int,
+    backlinks: int,
+    semantic_outgoing: int,
+    semantic_incoming: int,
+) -> IndexNoteEntry:
+    frontmatter = _frontmatter_map(text)
+    return IndexNoteEntry(
+        relpath=strip_redundant_wiki_prefix(wiki_root, rel) if wiki_root else rel,
+        label=_footer_wikilink_label(wiki_root, rel),
+        created=str(frontmatter[NOTE_CREATED]) if frontmatter.get(NOTE_CREATED) is not None else None,
+        modified=str(frontmatter[NOTE_MODIFIED]) if frontmatter.get(NOTE_MODIFIED) is not None else None,
+        compiled_from=str(frontmatter["compiled_from"]) if frontmatter.get("compiled_from") is not None else None,
+        tags=_normalize_tags_for_index(frontmatter.get("tags")),
+        explicit_links=explicit_links,
+        backlinks=backlinks,
+        semantic_outgoing=semantic_outgoing,
+        semantic_incoming=semantic_incoming,
+    )
 
 
 def _skip_index_in_index_listing(wiki_root: Path | None, rel: str) -> bool:
@@ -415,16 +489,28 @@ def compile_linked_markdown(
 
         base = _strip_generated_blocks(contents[rel])
         sem_for_rel = all_semantic.get(rel)
+        existing_frontmatter = _frontmatter_map(base)
+        authored_body_targets = {
+            resolved
+            for target in extract_wikilink_targets(base)
+            for resolved in resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md_set)
+        }
 
-        graph_stats = WikiGraphFrontmatterStats(compiled_at_iso=compiled_at_iso)
+        graph_stats = WikiGraphFrontmatterStats(
+            compiled_at_iso=compiled_at_iso,
+            created_at_iso=(compiled_at_iso if existing_frontmatter.get(NOTE_CREATED) is None else None),
+        )
         base = merge_wiki_graph_frontmatter(base, stats=graph_stats)
 
         # Inject "See also" wikilinks into the body so Obsidian traverses them.
-        see_also = _format_see_also_section(sem_for_rel or [], wiki_root=wiki_root)
+        see_also_targets = [
+            target_rel for target_rel in (sem_for_rel or []) if target_rel not in authored_body_targets
+        ]
+        see_also = _format_see_also_section(see_also_targets, wiki_root=wiki_root)
 
         # Dedupe: omit from **Related (semantic)** if that note is already our outbound See also
         # target (same page would list them twice).
-        outgoing_sem = set(sem_for_rel or [])
+        outgoing_sem = set(see_also_targets)
         inc_explicit = sorted(backlinks_explicit.get(rel, set()))
         sem_raw = (semantic_incoming.get(rel, set()) or set()) - set(
             backlinks_explicit.get(rel, set())
@@ -451,8 +537,71 @@ def compile_linked_markdown(
     return md_written, other_copied, semantic_edges
 
 
-def format_index_markdown(md_relpaths: list[str], *, wiki_root: Path | None = None) -> str:
-    """``Index.md`` with wikilink to each compiled note."""
+def build_index_entries(
+    raw_root: Path,
+    wiki_root: Path,
+    rel_uris: list[str],
+) -> list[IndexNoteEntry]:
+    md_relpaths = _collect_md_relpaths(raw_root, rel_uris)
+    contents: dict[str, str] = {}
+    for rel in md_relpaths:
+        out_rel = strip_redundant_wiki_prefix(wiki_root, rel)
+        wiki_path = wiki_root / out_rel
+        if not wiki_path.is_file():
+            continue
+        contents[rel] = wiki_path.read_text(encoding="utf-8")
+
+    all_md_set = set(contents)
+    stem_to_paths = _build_stem_index(list(contents))
+    title_to_paths: dict[str, list[str]] = {}
+    for rel, text in contents.items():
+        title = _frontmatter_title(text)
+        if title:
+            title_to_paths.setdefault(title.lower(), []).append(rel)
+
+    forward_explicit = {
+        rel: extract_wikilink_targets(_strip_generated_blocks(text)) for rel, text in contents.items()
+    }
+    backlinks_explicit = compute_backlinks(forward_explicit, stem_to_paths, title_to_paths, all_md_set)
+
+    semantic_outgoing: dict[str, list[str]] = {}
+    semantic_incoming: dict[str, set[str]] = {p: set() for p in all_md_set}
+    for rel, text in contents.items():
+        see_also_targets = extract_wikilink_targets(_managed_block_body(text, SEE_ALSO_BEGIN, SEE_ALSO_END))
+        outgoing: list[str] = []
+        for target in see_also_targets:
+            for resolved in resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md_set):
+                if resolved != rel and resolved not in outgoing:
+                    outgoing.append(resolved)
+        semantic_outgoing[rel] = outgoing
+
+        incoming_targets = extract_wikilink_targets(_managed_block_body(text, SEMANTIC_IN_BEGIN, SEMANTIC_IN_END))
+        for target in incoming_targets:
+            for resolved in resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md_set):
+                if resolved != rel:
+                    semantic_incoming[rel].add(resolved)
+
+    return [
+        _index_entry_for_note(
+            rel,
+            wiki_root=wiki_root,
+            text=contents[rel],
+            explicit_links=len(forward_explicit.get(rel, set())),
+            backlinks=len(backlinks_explicit.get(rel, set())),
+            semantic_outgoing=len(semantic_outgoing.get(rel, [])),
+            semantic_incoming=len(semantic_incoming.get(rel, set())),
+        )
+        for rel in sorted(contents)
+    ]
+
+
+def format_index_markdown(
+    md_relpaths: list[str],
+    *,
+    wiki_root: Path | None = None,
+    entries: list[IndexNoteEntry] | None = None,
+) -> str:
+    """``Index.md`` registry with wikilinks and compact note metadata."""
     lines = [
         "---",
         "title: Wiki Index",
@@ -471,6 +620,35 @@ def format_index_markdown(md_relpaths: list[str], *, wiki_root: Path | None = No
     ]
     if not md_relpaths:
         lines.append("_No markdown sources._")
+    elif entries:
+        lines.extend(
+            [
+                "Generated note registry with stable wikilinks and compact metadata for navigation and agent discovery.",
+                "",
+                "## Notes",
+                "",
+            ]
+        )
+        seen_labels: set[str] = set()
+        for entry in sorted(entries, key=lambda item: item.label.lower()):
+            if entry.label in seen_labels:
+                continue
+            seen_labels.add(entry.label)
+            lines.append(f"### [[{entry.label}]]")
+            lines.append(f"- path: `{entry.relpath}`")
+            if entry.created:
+                lines.append(f"- created: `{entry.created}`")
+            if entry.modified:
+                lines.append(f"- modified: `{entry.modified}`")
+            if entry.compiled_from:
+                lines.append(f"- source: `{entry.compiled_from}`")
+            if entry.tags:
+                lines.append("- tags: " + ", ".join(f"`{tag}`" for tag in entry.tags))
+            lines.append(f"- explicit_links: {entry.explicit_links}")
+            lines.append(f"- backlinks: {entry.backlinks}")
+            lines.append(f"- semantic_outgoing: {entry.semantic_outgoing}")
+            lines.append(f"- semantic_incoming: {entry.semantic_incoming}")
+            lines.append("")
     else:
         seen_labels: set[str] = set()
         for rel in sorted(md_relpaths):

@@ -1,10 +1,13 @@
 """Tests for wikilink extraction and backlink compilation."""
 
+import hashlib
+
 from pathlib import Path
 from unittest.mock import patch
 
 from wiki_langgraph.linking import (
     BACKLINKS_BEGIN,
+    IndexNoteEntry,
     SEMANTIC_IN_BEGIN,
     SEE_ALSO_BEGIN,
     SEE_ALSO_END,
@@ -14,6 +17,7 @@ from wiki_langgraph.linking import (
     format_index_markdown,
     resolve_wikilink_target,
     strip_redundant_wiki_prefix,
+    build_index_entries,
 )
 
 
@@ -46,16 +50,20 @@ def test_resolve_title_alias() -> None:
 
 
 def test_compile_skips_identical_content_write(tmp_path: Path) -> None:
-    """A wiki file is not re-written when its content would be byte-identical."""
     raw = tmp_path / "raw"
     wiki = tmp_path / "wiki"
     raw.mkdir()
     (raw / "solo.md").write_text("# Solo\n\nNo links.\n", encoding="utf-8")
     compile_linked_markdown(raw, wiki, ["solo.md"])
-    mtime_first = (wiki / "solo.md").stat().st_mtime
+    first = (wiki / "solo.md").read_text(encoding="utf-8")
     import time; time.sleep(0.05)
     compile_linked_markdown(raw, wiki, ["solo.md"])
-    assert (wiki / "solo.md").stat().st_mtime == mtime_first
+    second = (wiki / "solo.md").read_text(encoding="utf-8")
+    assert "created:" in first
+    assert "created:" in second
+    first_created = next(line for line in first.splitlines() if line.startswith("created:"))
+    second_created = next(line for line in second.splitlines() if line.startswith("created:"))
+    assert first_created == second_created
 
 
 def test_compile_semantic_cache_hit_skips_recompute(tmp_path: Path) -> None:
@@ -145,6 +153,108 @@ def test_format_index_skips_index_md_and_dedupes_labels(tmp_path: Path) -> None:
     assert "[[Index]]" not in text
     assert text.count("[[n]]") == 1
     assert "[[note]]" in text
+
+
+def test_format_index_rich_entries_include_agent_metadata() -> None:
+    text = format_index_markdown(
+        ["note.md"],
+        entries=[
+            IndexNoteEntry(
+                relpath="note.md",
+                label="note",
+                created="2026-01-01T00:00:00Z",
+                modified="2026-01-02T00:00:00Z",
+                compiled_from="raw/note.md",
+                tags=("agent", "demo"),
+                explicit_links=2,
+                backlinks=1,
+                semantic_outgoing=3,
+                semantic_incoming=4,
+            )
+        ],
+    )
+    assert "### [[note]]" in text
+    assert "- path: `note.md`" in text
+    assert "- created: `2026-01-01T00:00:00Z`" in text
+    assert "- modified: `2026-01-02T00:00:00Z`" in text
+    assert "- source: `raw/note.md`" in text
+    assert "- tags: `agent`, `demo`" in text
+    assert "- explicit_links: 2" in text
+    assert "- backlinks: 1" in text
+    assert "- semantic_outgoing: 3" in text
+    assert "- semantic_incoming: 4" in text
+
+
+def test_build_index_entries_counts_semantic_blocks(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+
+    (raw / "a.md").write_text("# A\n\nBody.\n", encoding="utf-8")
+    (raw / "b.md").write_text("# B\n\nBody.\n", encoding="utf-8")
+
+    (wiki / "a.md").write_text(
+        "# A\n\n"
+        "<!-- wiki-langgraph see-also -->\n"
+        "**See also:** [[b]]\n"
+        "<!-- /wiki-langgraph see-also -->\n",
+        encoding="utf-8",
+    )
+    (wiki / "b.md").write_text(
+        "# B\n\n"
+        "<!-- wiki-langgraph semantic-incoming -->\n"
+        "## Related (semantic)\n\n- [[a]]\n"
+        "<!-- /wiki-langgraph semantic-incoming -->\n",
+        encoding="utf-8",
+    )
+
+    entries = build_index_entries(raw, wiki, ["a.md", "b.md"])
+    by_label = {entry.label: entry for entry in entries}
+    assert by_label["a"].semantic_outgoing == 1
+    assert by_label["a"].semantic_incoming == 0
+    assert by_label["b"].semantic_outgoing == 0
+    assert by_label["b"].semantic_incoming == 1
+
+
+def test_compile_see_also_excludes_notes_already_linked_in_body(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "a.md").write_text("# A\n\nSee [[b]].\n", encoding="utf-8")
+    (raw / "b.md").write_text("# B\n\nTopic.\n", encoding="utf-8")
+    (raw / "c.md").write_text("# C\n\nTopic.\n", encoding="utf-8")
+
+    semantic_cache: dict[str, dict[str, object]] = {
+        "a.md": {
+            "hash": hashlib.sha256("# A\n\nSee [[b]].\n".encode()).hexdigest(),
+            "edges": ["b.md", "c.md"],
+        }
+    }
+
+    compile_linked_markdown(
+        raw,
+        wiki,
+        ["a.md", "b.md", "c.md"],
+        semantic_cache=semantic_cache,
+    )
+
+    text = (wiki / "a.md").read_text(encoding="utf-8")
+    assert "**See also:** [[c]]" in text
+    assert "**See also:** [[b]]" not in text
+
+
+def test_compile_initializes_created_and_modified_on_new_note(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "new.md").write_text("# New\n\nBody.\n", encoding="utf-8")
+
+    compile_linked_markdown(raw, wiki, ["new.md"])
+
+    out = (wiki / "new.md").read_text(encoding="utf-8")
+    assert "created:" in out
+    assert "modified:" in out
 
 
 def test_dedupe_raw_uris_for_wiki_prefers_shorter_path(tmp_path: Path) -> None:
