@@ -82,8 +82,11 @@ class Settings(BaseSettings):
     qmd_top_n: int = Field(default=10, ge=1, le=100)
     qmd_query_timeout_sec: int = Field(default=120, ge=5, le=600)
     qmd_refresh: bool = Field(
-        default=True,
-        description="After writing wiki files, run `qmd update` and `qmd embed -c <collection>` in index step.",
+        default=False,
+        description=(
+            "After writing wiki files, optionally run `qmd update` and `qmd embed -c <collection>` in the "
+            "index step. Default false keeps the minimal run free of QMD requirements."
+        ),
     )
     qmd_refresh_timeout_sec: int = Field(default=600, ge=30, le=3600)
     qmd_cpu_only: bool = Field(
@@ -217,7 +220,11 @@ class Settings(BaseSettings):
     def _empty_manifest_path_none(cls, value: object) -> Path | None:
         if value is None or value == "":
             return None
-        return Path(value) if not isinstance(value, Path) else value
+        if isinstance(value, Path):
+            return value
+        if isinstance(value, str):
+            return Path(value)
+        raise TypeError("manifest_path must be a path-like string")
 
     log_file: Path | None = Field(
         default=None,
@@ -233,7 +240,11 @@ class Settings(BaseSettings):
     def _empty_log_file_none(cls, value: object) -> Path | None:
         if value is None or value == "":
             return None
-        return Path(value) if not isinstance(value, Path) else value
+        if isinstance(value, Path):
+            return value
+        if isinstance(value, str):
+            return Path(value)
+        raise TypeError("log_file must be a path-like string")
 
     def raw_dir(self) -> Path:
         """Directory for fetched raw source blobs."""

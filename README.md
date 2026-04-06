@@ -18,7 +18,7 @@ Andrej Karpathy [posted on X](https://x.com/karpathy/status/2039805659525644595)
 | **[QMD](https://github.com/tobi/qmd)** on `PATH` | `WIKI_SEMANTIC_BACKEND=qmd` and/or `WIKI_QMD_REFRESH=true` (hybrid search + optional `qmd embed` after compile) |
 | **Obsidian** | Optional; useful as the reader/UI for the generated vault, not required to run the pipeline |
 
-**Minimal run:** no `.env` required if you are fine with defaults `data/raw` → `data/wiki` under the repo and you do not enable LLM compile or semantic LLM features. Anything that calls the chat API needs a reachable base URL and model id.
+**Minimal run:** no `.env` required if you are fine with defaults `data/raw` → `data/wiki` under the repo and you do not enable LLM compile, semantic LLM features, or QMD refresh. Anything that calls the chat API needs a reachable base URL and model id. QMD refresh is off by default for this minimal path.
 
 ## Setup
 
@@ -37,9 +37,16 @@ uv run wiki-langgraph lint
 uv run wiki-langgraph version
 ```
 
-### Fixing unresolved `[[wikilinks]]` in raw notes
+### Lint catches unresolved links, orphan notes, and stale wiki output
 
-Lint only sees links that resolve **within your ingested raw tree**. To clean notes automatically:
+`wiki-langgraph lint` checks the raw/wiki pair for a few high-signal problems:
+
+- unresolved `[[wikilinks]]` inside the ingested raw tree
+- markdown notes with **no outgoing `[[wikilinks]]`** (`W_ORPHAN_NOTE`), which are often suspect when the source corpus is incomplete or incorrectly split
+- raw notes newer than their compiled wiki output (`W_STALE_WIKI`)
+- `Index.md` drift versus the compiled note catalog
+
+Generated index notes are exempt from the orphan-note warning. To clean unresolved links automatically:
 
 ```bash
 uv run wiki-langgraph lint --fix --dry-run   # preview: fuzzy rewrites + strip the rest
@@ -80,7 +87,7 @@ If unset, paths are derived from the package location (repo root when developing
 | `WIKI_LLM_COMPILE_INCREMENTAL` | If `true`, only re-author files whose **raw** content changed (hash manifest under `data/.wiki-langgraph/` by default). |
 | `WIKI_LLM_COMPILE_ENRICH` | If `true`, merge new raw into **existing** wiki notes instead of full rewrite when a note already exists. |
 | `WIKI_LLM_COMPILE_MAX_WORKERS` | Thread pool size for authoring. **Default `1`**: local servers usually handle one completion at a time; raising this can cause timeouts. |
-| `WIKI_MANIFEST_PATH` | Optional override for the incremental hash / semantic-cache JSON file. |
+| `WIKI_MANIFEST_PATH` | Optional override for the incremental hash / semantic-cache JSON file. Deleted notes are pruned from stored hashes and semantic caches on later runs. |
 
 ### Semantic “See also” / related notes
 
@@ -95,7 +102,7 @@ If unset, paths are derived from the package location (repo root when developing
 
 | Variable | Purpose |
 |----------|---------|
-| `WIKI_QMD_REFRESH` | If `true`, after writing wiki files run `qmd update` and `qmd embed` for the configured collection. Set `false` in CI or when QMD is not installed. |
+| `WIKI_QMD_REFRESH` | If `true`, after writing wiki files run `qmd update` and `qmd embed` for the configured collection. **Default `false`** so a minimal run does not require QMD; enable it when local QMD indexing is installed and desired. |
 | `WIKI_QMD_REFRESH_TIMEOUT_SEC` | Subprocess timeout for refresh. |
 | `WIKI_QMD_CPU_ONLY` | If `true`, force CPU for node-llama-cpp-backed embedders when Metal/GPU fails on macOS. |
 
