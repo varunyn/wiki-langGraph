@@ -217,6 +217,20 @@ def test_build_index_entries_counts_semantic_blocks(tmp_path: Path) -> None:
     assert by_label["b"].semantic_incoming == 1
 
 
+def test_build_index_entries_skips_generated_index_note(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "note.md").write_text("# Note\n\nBody.\n", encoding="utf-8")
+    (wiki / "note.md").write_text("# Note\n\nBody.\n", encoding="utf-8")
+    (wiki / "Index.md").write_text("# Index\n\n[[note]]\n", encoding="utf-8")
+
+    entries = build_index_entries(raw, wiki, ["note.md", "wiki/Index.md"])
+
+    assert [entry.label for entry in entries] == ["note"]
+
+
 def test_compile_see_also_excludes_notes_already_linked_in_body(tmp_path: Path) -> None:
     raw = tmp_path / "raw"
     wiki = tmp_path / "wiki"
@@ -345,6 +359,34 @@ def test_semantic_two_pass_injects_see_also_and_backlinks(tmp_path: Path) -> Non
     assert SEMANTIC_IN_BEGIN in existing_out
     assert "[[new]]" in existing_out
     assert "## Backlinks" not in existing_out
+
+
+def test_backlinks_ignore_preserved_generated_see_also_blocks(tmp_path: Path) -> None:
+    """Existing compiled See also blocks are generated links, not authored backlinks."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "a.md").write_text("# A\n\nRaw body.\n", encoding="utf-8")
+    (raw / "b.md").write_text("# B\n\nRaw body.\n", encoding="utf-8")
+
+    existing_a = (
+        "# A\n\nRaw body.\n"
+        "<!-- wiki-langgraph see-also -->\n"
+        "**See also:** [[b]]\n"
+        "<!-- /wiki-langgraph see-also -->\n"
+    )
+
+    compile_linked_markdown(
+        raw,
+        wiki,
+        ["a.md", "b.md"],
+        content_overrides={"a.md": existing_a},
+    )
+
+    b_out = (wiki / "b.md").read_text(encoding="utf-8")
+    assert "## Backlinks" not in b_out
+    assert "[[a]]" not in b_out
 
 
 def test_mutual_semantic_edges_dedupe_backlinks_footer(tmp_path: Path) -> None:

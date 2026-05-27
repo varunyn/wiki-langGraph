@@ -101,6 +101,17 @@ def _is_index_note(rel: str, text: str) -> bool:
     return _frontmatter_kind(text) == INDEX_KIND_VALUE
 
 
+def _orphan_check_text(raw_root: Path, wiki_root: Path, rel: str, raw_text: str) -> str:
+    """Use compiled wiki text for orphan checks when it exists."""
+    wiki_path = wiki_root / strip_redundant_wiki_prefix(wiki_root, rel)
+    if wiki_path.is_file():
+        try:
+            return wiki_path.read_text(encoding="utf-8")
+        except OSError:
+            return raw_text
+    return raw_text
+
+
 def suggest_wikilink_replacement(
     target: str,
     stem_to_paths: dict[str, list[str]],
@@ -285,7 +296,9 @@ def run_lint(
                     rel,
                     f"from [[{target}]]",
                 )
-        if not targets and not _is_index_note(rel, text):
+        orphan_text = _orphan_check_text(raw_root, wiki_root, rel, text)
+        orphan_targets = extract_wikilink_targets(orphan_text)
+        if not orphan_targets and not _is_index_note(rel, orphan_text):
             report.add(
                 "W_ORPHAN_NOTE",
                 "markdown note has no outgoing [[wikilinks]]",
@@ -325,7 +338,7 @@ def run_lint(
             idx_text = index_path.read_text(encoding="utf-8")
         except OSError:
             idx_text = ""
-        idx_targets = _index_wikilink_targets(idx_text)
+        idx_targets = {target for target in _index_wikilink_targets(idx_text) if target.lower() != "index"}
         missing_in_index = expected_index_labels - idx_targets
         extra_in_index = idx_targets - expected_index_labels
         idx_label = "Index.md"

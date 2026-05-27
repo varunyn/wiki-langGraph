@@ -456,7 +456,7 @@ def compile_linked_markdown(
     # generated backlinks look like Obsidian-true authored links.
     forward_explicit: dict[str, set[str]] = {}
     for rel in md_relpaths:
-        forward_explicit[rel] = extract_wikilink_targets(contents[rel])
+        forward_explicit[rel] = extract_wikilink_targets(_strip_generated_blocks(contents[rel]))
 
     backlinks_explicit = compute_backlinks(
         forward_explicit, stem_to_paths, title_to_paths, all_md_set
@@ -548,6 +548,8 @@ def build_index_entries(
     md_relpaths = _collect_md_relpaths(raw_root, rel_uris)
     contents: dict[str, str] = {}
     for rel in md_relpaths:
+        if _skip_index_in_index_listing(wiki_root, rel):
+            continue
         out_rel = strip_redundant_wiki_prefix(wiki_root, rel)
         wiki_path = wiki_root / out_rel
         if not wiki_path.is_file():

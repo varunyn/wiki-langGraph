@@ -34,6 +34,20 @@ def test_lint_index_missing_entry(tmp_path: Path) -> None:
     assert any(i.code == "W_INDEX_DRIFT" and "note" in i.message.lower() for i in r.issues)
 
 
+def test_lint_index_drift_ignores_generated_index_self_link(tmp_path: Path) -> None:
+    """Index self-links should not count as unmatched note entries."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "note.md").write_text("# N\n\nok\n", encoding="utf-8")
+    (wiki / "Index.md").write_text("# Index\n\n- [[note]]\n- [[Index]]\n", encoding="utf-8")
+
+    r = run_lint(raw, wiki, ["note.md"])
+
+    assert not any(i.code == "W_INDEX_DRIFT" and "[[Index]]" in i.message for i in r.issues)
+
+
 def test_lint_stale_wiki_when_raw_newer(tmp_path: Path) -> None:
     """W_STALE_WIKI fires when raw file is newer than compiled wiki note."""
     raw = tmp_path / "raw"
@@ -164,6 +178,21 @@ def test_lint_warns_when_note_has_no_outgoing_wikilinks(tmp_path: Path) -> None:
     report = run_lint(raw, wiki, ["solo.md"])
 
     assert any(issue.code == "W_ORPHAN_NOTE" and issue.path == "solo.md" for issue in report.issues)
+
+
+def test_lint_uses_compiled_wiki_links_for_orphan_warning(tmp_path: Path) -> None:
+    """A compiled note with injected links should not fail orphan lint because raw lacks links."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "source.md").write_text("# Source\n\nRaw body only.\n", encoding="utf-8")
+    (raw / "target.md").write_text("# Target\n\nRaw body only.\n", encoding="utf-8")
+    (wiki / "source.md").write_text("# Source\n\n<!-- wiki-langgraph see-also -->\n[[target]]\n", encoding="utf-8")
+
+    report = run_lint(raw, wiki, ["source.md", "target.md"])
+
+    assert not any(issue.code == "W_ORPHAN_NOTE" and issue.path == "source.md" for issue in report.issues)
 
 
 def test_lint_skips_generated_index_note_for_orphan_warning(tmp_path: Path) -> None:
