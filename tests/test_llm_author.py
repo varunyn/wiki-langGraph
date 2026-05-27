@@ -92,6 +92,34 @@ def test_author_raw_to_wiki_markdown_falls_back_to_raw_text_on_llm_error() -> No
     assert out == "raw body"
 
 
+def test_author_raw_to_wiki_markdown_uses_message_text_property() -> None:
+    """Modern AIMessage text should be preferred over provider-native content blocks."""
+
+    class FakeChatOpenAI:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def invoke(self, _messages: list[object]) -> SimpleNamespace:
+            return SimpleNamespace(
+                text="# Title\n\nBody",
+                content=[
+                    {"type": "reasoning", "summary": "hidden"},
+                    {"type": "text", "text": "# Wrong\n\nProvider block"},
+                ],
+            )
+
+    settings = Settings(
+        openai_api_base="http://127.0.0.1:11434/v1",
+        llm_model="test-model",
+    )
+
+    with patch("wiki_langgraph.llm_author.ChatOpenAI", FakeChatOpenAI):
+        out = author_raw_to_wiki_markdown("raw body", "notes/source.md", settings=settings)
+
+    assert "# Title\n\nBody" in out
+    assert "Provider block" not in out
+
+
 def test_system_instructions_require_wikilinks_for_known_vault_notes(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     prompt = wiki_llm_system_instructions(

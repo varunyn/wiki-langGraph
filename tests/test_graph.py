@@ -1,7 +1,9 @@
 """Smoke tests for the compiled graph."""
 
+import asyncio
 from pathlib import Path
 
+from wiki_langgraph import graph as graph_module
 from wiki_langgraph.config import Settings
 from wiki_langgraph.graph import build_graph, run_once
 from wiki_langgraph.nodes import node_ingest
@@ -25,16 +27,47 @@ def test_build_graph_compiles(tmp_path: Path) -> None:
     """The compiled graph should be invokable."""
     cfg = _isolated_settings(tmp_path)
     app = build_graph(settings=cfg)
-    out = app.invoke(
-        {
-            "step_log": [],
-            "raw_uris": [],
-            "index_md_written": False,
-            "last_error": None,
-        }
+    out = asyncio.run(
+        app.ainvoke(
+            {
+                "step_log": [],
+                "raw_uris": [],
+                "index_md_written": False,
+                "last_error": None,
+            }
+        )
     )
     assert "step_log" in out
     assert len(out["step_log"]) == 4
+
+
+def test_build_graph_sets_node_timeouts_and_error_handlers(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """Graph nodes should carry explicit LangGraph timeout/error policies."""
+    added: dict[str, dict[str, object]] = {}
+
+    class FakeStateGraph:
+        def __init__(self, _state_schema: object) -> None:
+            pass
+
+        def add_node(self, name: str, action: object, **kwargs: object) -> None:
+            added[name] = kwargs
+
+        def add_edge(self, _src: object, _dest: object) -> None:
+            pass
+
+        def compile(self) -> object:
+            return object()
+
+    monkeypatch.setattr(graph_module, "StateGraph", FakeStateGraph)
+
+    cfg = _isolated_settings(tmp_path)
+    build_graph(settings=cfg)
+
+    assert added["ingest"]["timeout"] == cfg.graph_ingest_timeout_sec
+    assert added["compile_wiki"]["timeout"] == cfg.graph_compile_timeout_sec
+    assert added["index"]["timeout"] == cfg.graph_index_timeout_sec
+    assert added["lint"]["timeout"] == cfg.graph_lint_timeout_sec
+    assert all(call["error_handler"] is not None for call in added.values())
 
 
 def test_run_once_returns_step_log(tmp_path: Path) -> None:

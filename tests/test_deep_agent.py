@@ -45,6 +45,7 @@ def test_create_wiki_deep_agent_returns_compiled_graph(tmp_path: Path) -> None:
         openai_api_base="http://127.0.0.1:11434/v1",
         llm_model="llama3.2",
     )
+    (tmp_path / "AGENTS.md").write_text("# Agent guidance\n", encoding="utf-8")
     agent = create_wiki_deep_agent(settings=cfg)
     assert hasattr(agent, "invoke")
 
@@ -87,12 +88,18 @@ def test_create_wiki_deep_agent_passes_expected_factory_kwargs(tmp_path: Path) -
         openai_api_base="http://127.0.0.1:11434/v1",
         llm_model="llama3.2",
     )
+    (tmp_path / "AGENTS.md").write_text("# Agent guidance\n", encoding="utf-8")
 
     with patch("wiki_langgraph.deep_agent.create_deep_agent", fake_create_deep_agent):
         agent = create_wiki_deep_agent(settings=cfg, system_prompt="extra")
 
     assert agent is not None
     assert captured["skills"] == ["/skills/"]
+    assert captured["memory"] == ["/AGENTS.md"]
     assert captured["system_prompt"] == "extra"
+    assert [type(rule).__name__ for rule in captured["permissions"]] == [
+        "FilesystemPermission",
+        "FilesystemPermission",
+    ]
     assert type(captured["backend"]).__name__ == "CompositeBackend"
     assert type(captured["model"]).__name__ == "ChatOpenAI"

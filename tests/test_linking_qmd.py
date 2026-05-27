@@ -7,6 +7,8 @@ from wiki_langgraph.config import Settings
 from wiki_langgraph.linking_qmd import (
     _qmd_subprocess_env,
     find_relpath_for_qmd_file,
+    qmd_query_json,
+    run_qmd_refresh,
     suggest_related_via_qmd,
     vault_relpath_to_qmd_slug,
 )
@@ -54,3 +56,102 @@ def test_suggest_related_via_qmd_filters_catalog() -> None:
         out = suggest_related_via_qmd(cfg, "b.md", "# Hello\n\nBody.", catalog)
     assert "a.md" in out
     assert len([x for x in out if "z-other" in x]) == 0
+
+
+def test_qmd_query_uses_newer_cli_controls() -> None:
+    """QMD query should expose candidate limit, rerank, GPU, and chunk-strategy controls."""
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> object:
+        calls.append(args)
+
+        class Result:
+            returncode = 0
+            stdout = '[{"file":"qmd://cursor/a.md","score":0.9}]'
+            stderr = ""
+
+        return Result()
+
+    cfg = Settings(
+        qmd_collection="cursor",
+        qmd_top_n=7,
+        qmd_min_score=0.2,
+        qmd_candidate_limit=25,
+        qmd_no_rerank=True,
+        qmd_cpu_only=True,
+        qmd_chunk_strategy="auto",
+    )
+
+    with (
+        patch("wiki_langgraph.linking_qmd.shutil.which", return_value="/bin/qmd"),
+        patch("wiki_langgraph.linking_qmd.subprocess.run", side_effect=fake_run),
+    ):
+        rows = qmd_query_json("body", settings=cfg)
+
+    assert rows == [{"file": "qmd://cursor/a.md", "score": 0.9}]
+    assert calls == [
+        [
+            "qmd",
+            "query",
+            "body",
+            "-c",
+            "cursor",
+            "--json",
+            "-n",
+            "7",
+            "--min-score",
+            "0.2",
+            "-C",
+            "25",
+            "--no-rerank",
+            "--no-gpu",
+            "--chunk-strategy",
+            "auto",
+        ]
+    ]
+
+
+def test_qmd_refresh_uses_embedding_batch_controls() -> None:
+    """QMD embed should accept chunk strategy and memory caps when configured."""
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> object:
+        calls.append(args)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    cfg = Settings(
+        qmd_collection="cursor",
+        qmd_chunk_strategy="auto",
+        qmd_embed_max_docs_per_batch=20,
+        qmd_embed_max_batch_mb=64,
+    )
+
+    with (
+        patch("wiki_langgraph.linking_qmd.shutil.which", return_value="/bin/qmd"),
+        patch("wiki_langgraph.linking_qmd.subprocess.run", side_effect=fake_run),
+    ):
+        ok, detail = run_qmd_refresh(cfg)
+
+    assert ok is True
+    assert "qmd embed" in detail
+    assert calls == [
+        ["qmd", "update"],
+        [
+            "qmd",
+            "embed",
+            "-c",
+            "cursor",
+            "--chunk-strategy",
+            "auto",
+            "--max-docs-per-batch",
+            "20",
+            "--max-batch-mb",
+            "64",
+        ],
+    ]

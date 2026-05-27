@@ -22,6 +22,8 @@ flowchart LR
 | **index** | `nodes.node_index` | Optional **QMD index refresh** only (`QMD` call #2 — see [QMD](#qmd-local-search--embeddings)). Default is effectively off unless `WIKI_QMD_REFRESH=true`. Does **not** write `Index.md`. |
 | **lint** | `nodes.node_lint` | Runs the same checks as `wiki-langgraph lint` (`lint.run_lint`): unresolved wikilinks, orphan notes with no outgoing `[[wikilinks]]`, stale wiki output, and `Index.md` drift. If any issue is reported, sets `last_error` so **`wiki-langgraph run` exits 1**. Skipped when **`WIKI_LINT_ON_RUN=false`**. |
 
+Each graph node is registered as an async LangGraph node with explicit `timeout` and `error_handler` policies. `wiki-langgraph run` remains synchronous at the CLI boundary, but internally uses `ainvoke` so LangGraph can enforce node timeouts. Timeouts are configured with `WIKI_GRAPH_INGEST_TIMEOUT_SEC`, `WIKI_GRAPH_COMPILE_TIMEOUT_SEC`, `WIKI_GRAPH_INDEX_TIMEOUT_SEC`, and `WIKI_GRAPH_LINT_TIMEOUT_SEC`.
+
 ---
 
 ## When `WIKI_SEMANTIC_LINKS=true`
@@ -131,7 +133,7 @@ QMD appears in **two independent places**. Both are optional and gated by settin
 
 | Module | Function |
 |--------|----------|
-| `linking_qmd.py` | `suggest_related_via_qmd` → runs **`qmd query … --json`** per note (with `qmd_top_n`, `qmd_min_score`, `qmd_query_timeout_sec`), maps `qmd://…` hits back to vault relpaths. |
+| `linking_qmd.py` | `suggest_related_via_qmd` → runs **`qmd query … --json`** per note (with `qmd_top_n`, `qmd_min_score`, `qmd_candidate_limit`, optional `qmd_no_rerank`, `qmd_chunk_strategy`, and `qmd_query_timeout_sec`), maps `qmd://…` hits back to vault relpaths. |
 
 Invoked from **`linking.py`** inside the **first pass** over markdown notes (same pass as LLM semantic when `semantic_backend=llm`). **Manifest semantic cache** skips `qmd query` when raw body hash unchanged.
 
@@ -142,10 +144,11 @@ Invoked from **`linking.py`** inside the **first pass** over markdown notes (sam
 | Setting | Role |
 |---------|------|
 | `WIKI_QMD_REFRESH` | When `true`, after wiki files are written, run **`qmd update`** then **`qmd embed -c <collection>`** so the local QMD index/embeddings match the vault on disk. Default is **`false`** so a minimal run does not require QMD. |
+| `WIKI_QMD_CHUNK_STRATEGY`, `WIKI_QMD_EMBED_MAX_DOCS_PER_BATCH`, `WIKI_QMD_EMBED_MAX_BATCH_MB` | Optional newer-QMD controls for chunking and embedding memory use. |
 
 | Module | Function |
 |--------|----------|
-| `linking_qmd.py` | `run_qmd_refresh` (subprocess; `qmd_refresh_timeout_sec`, optional `qmd_cpu_only` env for node-llama-cpp). |
+| `linking_qmd.py` | `run_qmd_refresh` (subprocess; `qmd_refresh_timeout_sec`, optional `qmd_cpu_only`/`--no-gpu`, chunk strategy, and embedding batch caps). |
 
 Called only from **`node_index`** — **after** `compile_wiki` finishes, so new/changed wiki paths are on disk before embedding.
 
@@ -153,7 +156,7 @@ Called only from **`node_index`** — **after** `compile_wiki` finishes, so new/
 
 ## LLM (OpenAI-compatible HTTP) — three call sites
 
-All use **`langchain_openai.ChatOpenAI`** with `WIKI_OPENAI_API_BASE`, `WIKI_LLM_MODEL`, `WIKI_LLM_REQUEST_TIMEOUT_SEC`, etc.
+All use **`langchain_openai.ChatOpenAI`** with `WIKI_OPENAI_API_BASE`, `WIKI_LLM_MODEL`, `WIKI_LLM_REQUEST_TIMEOUT_SEC`, etc. Authoring reads LangChain message `.text` first, then falls back to provider content blocks, so native reasoning/tool metadata does not leak into compiled markdown.
 
 ```mermaid
 flowchart TB
@@ -202,7 +205,7 @@ flowchart TB
 
 | Piece | Role |
 |-------|------|
-| `deep_agent.create_wiki_deep_agent` | LangGraph Deep Agent with filesystem backend; **`/skills/`** routes to bundled `wiki_langgraph/skills` or project `skills/` when `skills/obsidian-markdown/SKILL.md` exists. |
+| `deep_agent.create_wiki_deep_agent` | LangGraph Deep Agent with filesystem backend; **`/skills/`** routes to bundled `wiki_langgraph/skills` or project `skills/` when `skills/obsidian-markdown/SKILL.md` exists. Loads `/AGENTS.md` as Deep Agents memory when present, and denies filesystem-tool access to `.env`, `.git`, `.codegraph`, and internal agent artifact paths. |
 | Not invoked by `wiki-langgraph run`. | |
 
 ---

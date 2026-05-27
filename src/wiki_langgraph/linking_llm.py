@@ -46,6 +46,12 @@ def _match_catalog_entry(suggestion: str, catalog: list[str]) -> str | None:
     return None
 
 
+def _structured_related(data: object) -> object:
+    if isinstance(data, dict):
+        return data.get("related")
+    return getattr(data, "related", None)
+
+
 def suggest_semantic_related(
     settings: Settings,
     current_relpath: str,
@@ -93,9 +99,7 @@ def suggest_semantic_related(
         llm = llm_factory(**llm_kwargs)
         structured_llm = llm.with_structured_output(SemanticRelatedOutput)
         data = structured_llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
-        if not isinstance(data, dict):
-            return []
-        raw_list = data.get("related")
+        raw_list = _structured_related(data)
         if not isinstance(raw_list, list):
             return []
         out: list[str] = []

@@ -95,6 +95,47 @@ def query_text_from_body(body: str, max_chars: int = QUERY_MAX_CHARS) -> str:
     return t or "note"
 
 
+def _qmd_query_args(query: str, settings: Settings) -> list[str]:
+    args = [
+        settings.qmd_bin,
+        "query",
+        query,
+        "-c",
+        settings.qmd_collection,
+        "--json",
+        "-n",
+        str(settings.qmd_top_n),
+        "--min-score",
+        str(settings.qmd_min_score),
+        "-C",
+        str(settings.qmd_candidate_limit),
+    ]
+    if settings.qmd_no_rerank:
+        args.append("--no-rerank")
+    if settings.qmd_cpu_only:
+        args.append("--no-gpu")
+    args.extend(["--chunk-strategy", settings.qmd_chunk_strategy])
+    return args
+
+
+def _qmd_embed_args(settings: Settings) -> list[str]:
+    args = [
+        settings.qmd_bin,
+        "embed",
+        "-c",
+        settings.qmd_collection,
+        "--chunk-strategy",
+        settings.qmd_chunk_strategy,
+    ]
+    if settings.qmd_cpu_only:
+        args.append("--no-gpu")
+    if settings.qmd_embed_max_docs_per_batch is not None:
+        args.extend(["--max-docs-per-batch", str(settings.qmd_embed_max_docs_per_batch)])
+    if settings.qmd_embed_max_batch_mb is not None:
+        args.extend(["--max-batch-mb", str(settings.qmd_embed_max_batch_mb)])
+    return args
+
+
 def _extract_json_array(stdout: str) -> list[dict[str, Any]]:
     """Parse first JSON array from QMD stdout (may include progress text)."""
     dec = json.JSONDecoder()
@@ -122,18 +163,7 @@ def qmd_query_json(
         logger.warning("QMD binary not found on PATH (%s); skipping QMD semantic links", exe)
         return []
 
-    cmd = [
-        qmd_bin,
-        "query",
-        query,
-        "-c",
-        settings.qmd_collection,
-        "--json",
-        "-n",
-        str(settings.qmd_top_n),
-        "--min-score",
-        str(settings.qmd_min_score),
-    ]
+    cmd = _qmd_query_args(query, settings)
     try:
         proc = subprocess.run(
             cmd,
@@ -229,7 +259,7 @@ def run_qmd_refresh(settings: Settings) -> tuple[bool, str]:
     parts: list[str] = []
     for args in (
         [settings.qmd_bin, "update"],
-        [settings.qmd_bin, "embed", "-c", settings.qmd_collection],
+        _qmd_embed_args(settings),
     ):
         try:
             proc = subprocess.run(

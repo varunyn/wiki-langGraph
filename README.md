@@ -96,15 +96,28 @@ If unset, paths are derived from the package location (repo root when developing
 | `WIKI_SEMANTIC_LINKS`                                                | If `true`, compile suggests related notes (separate from authored `[[wikilinks]]`). |
 | `WIKI_SEMANTIC_BACKEND`                                              | `llm` (needs API base) or `qmd` (local CLI).                                        |
 | `WIKI_QMD_BIN`, `WIKI_QMD_COLLECTION`                                | QMD executable and collection name for `qmd query` / refresh.                       |
-| `WIKI_QMD_MIN_SCORE`, `WIKI_QMD_TOP_N`, `WIKI_QMD_QUERY_TIMEOUT_SEC` | Tune retrieval quality and timeouts.                                                |
+| `WIKI_QMD_MIN_SCORE`, `WIKI_QMD_TOP_N`, `WIKI_QMD_CANDIDATE_LIMIT`  | Tune retrieval quality and candidate breadth.                                       |
+| `WIKI_QMD_NO_RERANK`, `WIKI_QMD_QUERY_TIMEOUT_SEC`                  | Skip reranking for faster CPU-friendly queries and tune query timeouts.             |
+| `WIKI_QMD_CHUNK_STRATEGY`                                           | QMD chunking mode for query/embed: `regex` (default) or `auto`.                     |
 
 ### QMD index refresh (after compile)
 
 | Variable                       | Purpose                                                                                                                                                                                                                    |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WIKI_QMD_REFRESH`             | If `true`, after writing wiki files run `qmd update` and `qmd embed` for the configured collection. **Default `false`** so a minimal run does not require QMD; enable it when local QMD indexing is installed and desired. |
-| `WIKI_QMD_REFRESH_TIMEOUT_SEC` | Subprocess timeout for refresh.                                                                                                                                                                                            |
-| `WIKI_QMD_CPU_ONLY`            | If `true`, force CPU for node-llama-cpp-backed embedders when Metal/GPU fails on macOS.                                                                                                                                    |
+| `WIKI_QMD_REFRESH_TIMEOUT_SEC`        | Subprocess timeout for refresh.                                                                                                                                                                                            |
+| `WIKI_QMD_EMBED_MAX_DOCS_PER_BATCH`   | Optional cap for documents loaded per `qmd embed` batch.                                                                                                                                                                    |
+| `WIKI_QMD_EMBED_MAX_BATCH_MB`         | Optional UTF-8 MB cap for each `qmd embed` batch.                                                                                                                                                                          |
+| `WIKI_QMD_CPU_ONLY`                   | If `true`, force CPU for node-llama-cpp-backed query/embed work when Metal/GPU fails on macOS.                                                                                                                             |
+
+### Graph runtime
+
+| Variable | Purpose |
+| -------- | ------- |
+| `WIKI_GRAPH_INGEST_TIMEOUT_SEC` | LangGraph timeout for the ingest node. |
+| `WIKI_GRAPH_COMPILE_TIMEOUT_SEC` | LangGraph timeout for compile, including optional local LLM authoring. Default is intentionally high. |
+| `WIKI_GRAPH_INDEX_TIMEOUT_SEC` | LangGraph timeout for the index node, including optional QMD refresh/embed. |
+| `WIKI_GRAPH_LINT_TIMEOUT_SEC` | LangGraph timeout for vault lint. |
 
 ### Lint, logging, skills
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from deepagents import create_deep_agent
+from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
@@ -52,6 +52,29 @@ def chat_model_from_settings(settings: Settings) -> ChatOpenAI:
     return ChatOpenAI(**kwargs)
 
 
+def deep_agent_memory(settings: Settings) -> list[str]:
+    """Memory files loaded into the Deep Agents prompt when present."""
+    if (settings.project_root.resolve() / "AGENTS.md").is_file():
+        return ["/AGENTS.md"]
+    return []
+
+
+def deep_agent_permissions() -> list[FilesystemPermission]:
+    """Path-level safeguards for the built-in Deep Agents filesystem tools."""
+    return [
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/.env", "/.env.*", "/.git/**", "/.codegraph/**"],
+            mode="deny",
+        ),
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/large_tool_results/**", "/conversation_history/**"],
+            mode="deny",
+        ),
+    ]
+
+
 def create_wiki_deep_agent(
     settings: Settings | None = None,
     *,
@@ -79,5 +102,7 @@ def create_wiki_deep_agent(
         model=resolved_model,
         backend=backend,
         skills=["/skills/"],
+        memory=deep_agent_memory(cfg),
+        permissions=deep_agent_permissions(),
         system_prompt=system_prompt,
     )

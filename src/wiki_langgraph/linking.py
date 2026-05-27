@@ -14,11 +14,6 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from wiki_langgraph.config import Settings
-
 from wiki_langgraph.frontmatter_graph import (
     NOTE_CREATED,
     NOTE_MODIFIED,
@@ -30,6 +25,11 @@ from wiki_langgraph.frontmatter_graph import (
     merge_wiki_graph_frontmatter,
     utc_now_iso,
 )
+
+if TYPE_CHECKING:
+    from wiki_langgraph.config import Settings
+
+logger = logging.getLogger(__name__)
 
 # Markers so re-runs replace only our managed blocks (not hand-written sections).
 BACKLINKS_BEGIN = "<!-- wiki-langgraph backlinks -->"
@@ -429,14 +429,17 @@ def compile_linked_markdown(
     all_semantic: dict[str, list[str]] = {}
     semantic_cache_hits = 0
 
-    if use_semantic_llm or use_semantic_qmd:
+    if semantic_cache is not None or use_semantic_llm or use_semantic_qmd:
         for rel in md_relpaths:
             base_for_sem = _strip_generated_blocks(contents[rel])
             body_hash = hashlib.sha256(base_for_sem.encode()).hexdigest()
+            raw_body_hash = hashlib.sha256(contents[rel].encode()).hexdigest()
             cached = semantic_cache.get(rel) if semantic_cache is not None else None
-            if cached is not None and cached.get("hash") == body_hash:
+            if cached is not None and cached.get("hash") in {body_hash, raw_body_hash}:
                 all_semantic[rel] = list(cached.get("edges") or [])
                 semantic_cache_hits += 1
+            elif not (use_semantic_llm or use_semantic_qmd):
+                all_semantic[rel] = []
             else:
                 if use_semantic_llm:
                     from wiki_langgraph.linking_llm import suggest_semantic_related

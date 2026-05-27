@@ -1,7 +1,7 @@
 """Tests for wikilink extraction and backlink compilation."""
 
 import hashlib
-
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -56,7 +56,7 @@ def test_compile_skips_identical_content_write(tmp_path: Path) -> None:
     (raw / "solo.md").write_text("# Solo\n\nNo links.\n", encoding="utf-8")
     compile_linked_markdown(raw, wiki, ["solo.md"])
     first = (wiki / "solo.md").read_text(encoding="utf-8")
-    import time; time.sleep(0.05)
+    time.sleep(0.05)
     compile_linked_markdown(raw, wiki, ["solo.md"])
     second = (wiki / "solo.md").read_text(encoding="utf-8")
     assert "created:" in first

@@ -55,6 +55,26 @@ class Settings(BaseSettings):
             "deep agent). Local CPU/GPU generation of long notes often exceeds 120s; raise if needed."
         ),
     )
+    graph_ingest_timeout_sec: int = Field(
+        default=60,
+        ge=1,
+        description="LangGraph node timeout for ingest.",
+    )
+    graph_compile_timeout_sec: int = Field(
+        default=3600,
+        ge=1,
+        description="LangGraph node timeout for compile_wiki. Keep high for optional local LLM authoring.",
+    )
+    graph_index_timeout_sec: int = Field(
+        default=900,
+        ge=1,
+        description="LangGraph node timeout for index, including optional QMD refresh/embed.",
+    )
+    graph_lint_timeout_sec: int = Field(
+        default=300,
+        ge=1,
+        description="LangGraph node timeout for vault lint.",
+    )
     obsidian_markdown_skill_path: Path | None = Field(
         default=None,
         description=(
@@ -80,6 +100,15 @@ class Settings(BaseSettings):
     )
     qmd_min_score: float = Field(default=0.35, ge=0.0, le=1.0)
     qmd_top_n: int = Field(default=10, ge=1, le=100)
+    qmd_candidate_limit: int = Field(default=40, ge=1, le=1000)
+    qmd_no_rerank: bool = Field(
+        default=False,
+        description="If true, pass --no-rerank to qmd query for faster CPU-friendly retrieval.",
+    )
+    qmd_chunk_strategy: str = Field(
+        default="regex",
+        description="QMD chunking mode for query/embed: `regex` or newer AST-backed `auto`.",
+    )
     qmd_query_timeout_sec: int = Field(default=120, ge=5, le=600)
     qmd_refresh: bool = Field(
         default=False,
@@ -89,6 +118,8 @@ class Settings(BaseSettings):
         ),
     )
     qmd_refresh_timeout_sec: int = Field(default=600, ge=30, le=3600)
+    qmd_embed_max_docs_per_batch: int | None = Field(default=None, ge=1)
+    qmd_embed_max_batch_mb: int | None = Field(default=None, ge=1)
     qmd_cpu_only: bool = Field(
         default=False,
         description=(
@@ -169,6 +200,24 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.lower() in ("1", "true", "yes", "on")
         return bool(value)
+
+    @field_validator("qmd_no_rerank", mode="before")
+    @classmethod
+    def _coerce_qmd_no_rerank(cls, value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ("1", "true", "yes", "on")
+        return bool(value)
+
+    @field_validator("qmd_chunk_strategy", mode="before")
+    @classmethod
+    def _qmd_chunk_strategy(cls, value: object) -> str:
+        if isinstance(value, str):
+            x = value.lower().strip()
+            if x in ("regex", "auto"):
+                return x
+        return "regex"
 
     @field_validator("qmd_cpu_only", mode="before")
     @classmethod

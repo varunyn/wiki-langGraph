@@ -23,6 +23,35 @@ def _truncate(text: str, max_chars: int) -> str:
     return text[: max_chars - 30] + "\n\n…(source truncated for context window)…\n"
 
 
+def _message_text(message: object) -> str:
+    """Extract plain assistant text across LangChain/provider message shapes."""
+    text_attr = getattr(message, "text", None)
+    if isinstance(text_attr, str):
+        return text_attr
+    if callable(text_attr):
+        text_value = text_attr()
+        if isinstance(text_value, str):
+            return text_value
+
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+                elif isinstance(block.get("content"), str):
+                    parts.append(str(block["content"]))
+        if parts:
+            return "\n".join(parts)
+    return str(content)
+
+
 def _inject_provenance_frontmatter(markdown: str, source_rel: str) -> str:
     """Ensure ``compiled_from: <source_rel>`` appears in YAML frontmatter.
 
@@ -150,7 +179,7 @@ def author_raw_to_wiki_markdown(
                 HumanMessage(content=human_content),
             ]
         )
-        out = msg.content if isinstance(msg.content, str) else str(msg.content)
+        out = _message_text(msg)
         out = out.strip()
         if not out:
             return raw_text

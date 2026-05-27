@@ -76,3 +76,35 @@ def test_suggest_semantic_related_returns_empty_on_llm_error() -> None:
         )
 
     assert out == []
+
+
+def test_suggest_semantic_related_accepts_object_structured_output() -> None:
+    """Structured output may be returned as an object instead of a plain dict."""
+
+    class FakeStructuredChatOpenAI:
+        related = ["topic-b"]
+
+        def invoke(self, _messages: list[object]) -> object:
+            return self
+
+    class FakeChatOpenAI:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def with_structured_output(self, _schema: object, **_kwargs: object) -> FakeStructuredChatOpenAI:
+            return FakeStructuredChatOpenAI()
+
+    settings = Settings(
+        openai_api_base="http://127.0.0.1:11434/v1",
+        llm_model="test-model",
+    )
+
+    with patch("langchain_openai.ChatOpenAI", FakeChatOpenAI):
+        out = suggest_semantic_related(
+            settings,
+            "topic-a.md",
+            "body",
+            ["topic-a.md", "topic-b.md"],
+        )
+
+    assert out == ["topic-b.md"]
