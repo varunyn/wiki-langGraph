@@ -25,8 +25,10 @@ def test_configure_logging_writes(tmp_path: Path) -> None:
 
 
 def test_configure_skips_without_log_file() -> None:
-    """No log_file should not attach handlers."""
+    """No log_file should suppress package logs instead of leaking through lastResort."""
     pkg = logging.getLogger("wiki_langgraph")
     pkg.handlers.clear()
     configure_logging(Settings(log_file=None))
-    assert len(pkg.handlers) == 0
+    assert len(pkg.handlers) == 1
+    assert isinstance(pkg.handlers[0], logging.NullHandler)
+    assert pkg.propagate is False

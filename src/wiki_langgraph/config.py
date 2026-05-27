@@ -155,6 +155,13 @@ class Settings(BaseSettings):
             "Raise only if your server truly supports concurrent chat completions."
         ),
     )
+    llm_compile_review: str = Field(
+        default="off",
+        description=(
+            "LLM compile review routing: off (write generated notes), risky (queue only risky "
+            "candidates), or all (queue every generated candidate)."
+        ),
+    )
     llm_compile_enrich: bool = Field(
         default=False,
         description=(
@@ -245,6 +252,15 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.lower() in ("1", "true", "yes", "on")
         return bool(value)
+
+    @field_validator("llm_compile_review", mode="before")
+    @classmethod
+    def _llm_compile_review(cls, value: object) -> str:
+        if isinstance(value, str):
+            x = value.lower().strip()
+            if x in {"off", "risky", "all"}:
+                return x
+        return "off"
 
     @field_validator("lint_on_run", mode="before")
     @classmethod

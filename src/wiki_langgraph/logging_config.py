@@ -25,17 +25,19 @@ def configure_logging(settings: Settings) -> None:
     Safe to call once per process (replaces prior handlers on that logger). Child
     loggers such as ``wiki_langgraph.nodes`` propagate here.
     """
+    pkg = logging.getLogger("wiki_langgraph")
+    pkg.handlers.clear()
+    pkg.propagate = False
+
+    level = parse_log_level(settings.log_level)
+    pkg.setLevel(level)
+
     if settings.log_file is None:
+        pkg.addHandler(logging.NullHandler())
         return
 
     path = Path(settings.log_file).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
-    level = parse_log_level(settings.log_level)
-
-    pkg = logging.getLogger("wiki_langgraph")
-    pkg.handlers.clear()
-    pkg.setLevel(level)
-    pkg.propagate = False
 
     handler = logging.FileHandler(path, encoding="utf-8", mode="a")
     handler.setLevel(level)

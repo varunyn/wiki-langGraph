@@ -25,3 +25,19 @@ def test_llm_request_timeout_default() -> None:
 def test_llm_compile_max_workers_default() -> None:
     """Field default is sequential authoring (local inference is usually single-stream)."""
     assert Settings.model_fields["llm_compile_max_workers"].default == 1
+
+
+def test_llm_compile_review_default_off() -> None:
+    """Review mode is opt-in for backward compatibility."""
+    assert Settings().llm_compile_review == "off"
+
+
+def test_llm_compile_review_accepts_supported_modes() -> None:
+    """Review mode accepts off/risky/all and normalizes case."""
+    assert Settings(llm_compile_review="RISKY").llm_compile_review == "risky"
+    assert Settings(llm_compile_review="all").llm_compile_review == "all"
+
+
+def test_llm_compile_review_invalid_falls_back_to_off() -> None:
+    """Unexpected review mode values fall back to current behavior."""
+    assert Settings(llm_compile_review="maybe").llm_compile_review == "off"

@@ -1,11 +1,14 @@
 """Smoke tests for the compiled graph."""
 
 import asyncio
+import json
 from pathlib import Path
+from unittest.mock import patch
 
 from wiki_langgraph import graph as graph_module
 from wiki_langgraph.config import Settings
 from wiki_langgraph.graph import build_graph, run_once
+from wiki_langgraph.manifest import file_sha256, load_manifest, save_manifest
 from wiki_langgraph.nodes import node_ingest
 
 
@@ -117,6 +120,27 @@ def test_ingest_skips_git_dir(tmp_path: Path) -> None:
     assert out["raw_uris"] == ["ok.txt"]
 
 
+def test_ingest_skips_nested_wiki_output_dir(tmp_path: Path) -> None:
+    """Generated wiki output under the raw root should not feed back into ingest."""
+    raw = tmp_path / "vault"
+    wiki = raw / "wiki"
+    wiki.mkdir(parents=True)
+    (raw / "source.md").write_text("# Source\n", encoding="utf-8")
+    (wiki / "Index.md").write_text("# Index\n\n[[source]]\n", encoding="utf-8")
+    (wiki / "source.md").write_text("# Generated\n", encoding="utf-8")
+
+    out = node_ingest(
+        {},
+        settings=Settings(
+            project_root=tmp_path,
+            data_raw_dir=raw,
+            data_wiki_dir=wiki,
+        ),
+    )
+
+    assert out["raw_uris"] == ["source.md"]
+
+
 def test_run_fails_when_lint_finds_unresolved_wikilink(tmp_path: Path) -> None:
     """Pipeline should set last_error when raw markdown has an unresolved wikilink."""
     cfg = _isolated_settings(tmp_path)
@@ -191,3 +215,122 @@ def test_default_settings_disable_qmd_refresh_for_minimal_run(tmp_path: Path) ->
     cfg = Settings(project_root=tmp_path, data_raw_dir=raw, data_wiki_dir=wiki)
 
     assert cfg.qmd_refresh is False
+
+
+def test_llm_compile_review_risky_applies_safe_new_note(tmp_path: Path) -> None:
+    """Risky review mode should not queue straightforward new generated notes."""
+    cfg = _isolated_settings(tmp_path)
+    cfg = cfg.model_copy(
+        update={
+            "llm_compile": True,
+            "openai_api_base": "http://127.0.0.1:11434/v1",
+            "llm_compile_review": "risky",
+            "lint_on_run": False,
+        }
+    )
+    (cfg.raw_dir() / "new.md").write_text("# Raw\n\nBody.\n", encoding="utf-8")
+
+    with patch(
+        "wiki_langgraph.nodes.author_raw_to_wiki_markdown",
+        return_value="---\ncompiled_from: new.md\n---\n\n# Generated\n\nUseful generated body.",
+    ):
+        state = run_once(settings=cfg)
+
+    assert state.get("last_error") is None
+    assert "# Generated" in (cfg.wiki_dir() / "new.md").read_text(encoding="utf-8")
+    assert not any((tmp_path / "data" / ".wiki-langgraph" / "candidates").glob("*"))
+    manifest = load_manifest(cfg.resolved_manifest_path())
+    assert manifest["hashes"]["new.md"] == file_sha256(cfg.raw_dir() / "new.md")
+
+
+def test_llm_compile_review_risky_queues_existing_overwrite_without_hash_update(
+    tmp_path: Path,
+) -> None:
+    """Risky existing-note rewrites should queue and preserve the old manifest hash."""
+    cfg = _isolated_settings(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    cfg = cfg.model_copy(
+        update={
+            "llm_compile": True,
+            "openai_api_base": "http://127.0.0.1:11434/v1",
+            "llm_compile_review": "risky",
+            "manifest_path": manifest_path,
+            "lint_on_run": False,
+        }
+    )
+    (cfg.raw_dir() / "existing.md").write_text("# Raw changed\n\nNew raw body.\n", encoding="utf-8")
+    (cfg.wiki_dir() / "existing.md").write_text("# Existing\n\nKeep this reviewed note.\n", encoding="utf-8")
+    save_manifest(manifest_path, {"existing.md": "0" * 64})
+
+    with patch(
+        "wiki_langgraph.nodes.author_raw_to_wiki_markdown",
+        return_value="---\ncompiled_from: existing.md\n---\n\n# Generated\n\nRisky replacement.",
+    ):
+        state = run_once(settings=cfg)
+
+    assert state.get("last_error") is None
+    wiki_text = (cfg.wiki_dir() / "existing.md").read_text(encoding="utf-8")
+    assert "Keep this reviewed note." in wiki_text
+    assert "Risky replacement." not in wiki_text
+    manifest = load_manifest(manifest_path)
+    assert manifest["hashes"]["existing.md"] == "0" * 64
+    candidate_dirs = list((tmp_path / "data" / ".wiki-langgraph" / "candidates").glob("*"))
+    assert len(candidate_dirs) == 1
+    metadata = json.loads((candidate_dirs[0] / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["source_relpath"] == "existing.md"
+    assert metadata["risk_reasons"] == ["existing_note_overwrite"]
+
+
+def test_llm_compile_review_all_queues_new_note_without_writing_wiki(tmp_path: Path) -> None:
+    """All-review mode should queue even safe new notes and leave wiki output absent."""
+    cfg = _isolated_settings(tmp_path)
+    cfg = cfg.model_copy(
+        update={
+            "llm_compile": True,
+            "openai_api_base": "http://127.0.0.1:11434/v1",
+            "llm_compile_review": "all",
+            "lint_on_run": False,
+        }
+    )
+    (cfg.raw_dir() / "new.md").write_text("# Raw\n\nBody.\n", encoding="utf-8")
+
+    with patch(
+        "wiki_langgraph.nodes.author_raw_to_wiki_markdown",
+        return_value="---\ncompiled_from: new.md\n---\n\n# Generated\n\nUseful generated body.",
+    ):
+        state = run_once(settings=cfg)
+
+    assert state.get("last_error") is None
+    assert not (cfg.wiki_dir() / "new.md").exists()
+    assert "new.md" not in load_manifest(cfg.resolved_manifest_path())["hashes"]
+    assert len(list((tmp_path / "data" / ".wiki-langgraph" / "candidates").glob("*"))) == 1
+
+
+def test_llm_compile_incremental_preserves_existing_authored_wiki_note(tmp_path: Path) -> None:
+    """Unchanged LLM-authored notes should not be overwritten by raw source on later runs."""
+    cfg = _isolated_settings(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    raw_path = cfg.raw_dir() / "stable.md"
+    raw_path.write_text("# Raw\n\nUncompiled raw text.\n", encoding="utf-8")
+    (cfg.wiki_dir() / "stable.md").write_text(
+        "---\ncompiled_from: stable.md\n---\n\n# Authored\n\nCurated generated text.",
+        encoding="utf-8",
+    )
+    save_manifest(manifest_path, {"stable.md": file_sha256(raw_path)})
+    cfg = cfg.model_copy(
+        update={
+            "llm_compile": True,
+            "openai_api_base": "http://127.0.0.1:11434/v1",
+            "manifest_path": manifest_path,
+            "lint_on_run": False,
+        }
+    )
+
+    with patch("wiki_langgraph.nodes.author_raw_to_wiki_markdown") as author:
+        state = run_once(settings=cfg)
+
+    assert state.get("last_error") is None
+    author.assert_not_called()
+    wiki_text = (cfg.wiki_dir() / "stable.md").read_text(encoding="utf-8")
+    assert "Curated generated text." in wiki_text
+    assert "Uncompiled raw text." not in wiki_text
