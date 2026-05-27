@@ -1,6 +1,6 @@
 """LangGraph-based pipeline: collect sources, compile markdown wiki, index, CLI/Q&A hooks."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from wiki_langgraph.cli import main
 from wiki_langgraph.obsidian_prompt import (
