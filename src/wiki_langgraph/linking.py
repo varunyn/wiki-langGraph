@@ -1,6 +1,7 @@
-"""Resolve Obsidian wikilinks and inject a Backlinks section for in-vault knowledge graph edges.
+"""Resolve internal note links and inject Backlinks sections for wiki graph edges.
 
-Wikilink syntax follows Obsidian: https://obsidian.md/help/links
+Authored source wikilinks are accepted as input. The default OKF output profile
+emits standard Markdown links in generated content.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
+from urllib.parse import unquote, urlparse
 
 import yaml
 
@@ -95,8 +97,25 @@ def _managed_block_body(body: str, begin: str, end: str) -> str:
     return match.group(1) if match else ""
 
 
-def _format_see_also_section(semantic_related: list[str], *, wiki_root: Path | None) -> str:
-    """A managed 'See also' block containing real [[wikilinks]] to related notes.
+def _markdown_link_href(wiki_root: Path | None, rel: str) -> str:
+    out_rel = strip_redundant_wiki_prefix(wiki_root, rel) if wiki_root is not None else rel
+    return out_rel.replace(" ", "%20")
+
+
+def _format_note_link(rel: str, *, wiki_root: Path | None, output_profile: str = "okf") -> str:
+    label = _footer_wikilink_label(wiki_root, rel)
+    if output_profile == "okf":
+        return f"[{label}]({_markdown_link_href(wiki_root, rel)})"
+    return f"[[{label}]]"
+
+
+def _format_see_also_section(
+    semantic_related: list[str],
+    *,
+    wiki_root: Path | None,
+    output_profile: str = "okf",
+) -> str:
+    """A managed 'See also' block containing links to related notes.
 
     Unlike the backlinks footer, this section lives in the *body* of the compiled
     wiki note so Obsidian resolves the links and includes them in the forward-link
@@ -105,7 +124,8 @@ def _format_see_also_section(semantic_related: list[str], *, wiki_root: Path | N
     if not semantic_related:
         return ""
     links = " · ".join(
-        f"[[{_footer_wikilink_label(wiki_root, r)}]]" for r in sorted(semantic_related)
+        _format_note_link(r, wiki_root=wiki_root, output_profile=output_profile)
+        for r in sorted(semantic_related)
     )
     inner = f"**See also:** {links}"
     return f"\n{SEE_ALSO_BEGIN}\n{inner}\n{SEE_ALSO_END}\n"
@@ -124,6 +144,53 @@ def extract_wikilink_targets(markdown: str) -> set[str]:
             continue
         out.add(m.group(1).strip())
     return out
+
+
+_MARKDOWN_LINK_TARGET = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
+
+
+def _extract_link_targets(markdown: str) -> set[str]:
+    """Extract legacy wikilink targets and local Markdown link paths."""
+    targets = extract_wikilink_targets(markdown)
+    for href in _MARKDOWN_LINK_TARGET.findall(markdown):
+        parsed = urlparse(href.strip())
+        if parsed.scheme or parsed.netloc:
+            continue
+        target = unquote(parsed.path).lstrip("./")
+        if target:
+            targets.add(target)
+    return targets
+
+
+_WIKILINK_FULL = re.compile(
+    r"(?<!\!)\[\[([^\]#|]+)(\|[^\]]*)?((?:#[^\]]*)?)\]\]",
+)
+
+
+def _convert_wikilinks_to_markdown_links(
+    markdown: str,
+    *,
+    stem_to_paths: dict[str, list[str]],
+    title_to_paths: dict[str, list[str]],
+    all_md: set[str],
+    wiki_root: Path | None,
+) -> str:
+    """Convert resolved Obsidian wikilinks to OKF-compatible Markdown links."""
+
+    def repl(match: re.Match[str]) -> str:
+        target = match.group(1).strip()
+        pipe = match.group(2)
+        hash_part = match.group(3)
+        resolved = resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md)
+        if not resolved:
+            return match.group(0)
+        label = pipe[1:].strip() if pipe and pipe.startswith("|") else _footer_wikilink_label(wiki_root, resolved[0])
+        href = _markdown_link_href(wiki_root, resolved[0])
+        if hash_part and hash_part.startswith("#"):
+            href += "#" + hash_part[1:].strip().replace(" ", "-")
+        return f"[{label}]({href})"
+
+    return _WIKILINK_FULL.sub(repl, markdown)
 
 
 def _frontmatter_title(text: str) -> str | None:
@@ -271,7 +338,7 @@ def _index_entry_for_note(
 
 
 def _skip_index_in_index_listing(wiki_root: Path | None, rel: str) -> bool:
-    """True if this path is the generated ``Index.md`` (do not list the index in itself)."""
+    """True if this path is the generated ``index.md`` (do not list the index in itself)."""
     if wiki_root is None:
         return PurePosixPath(rel).name.lower() == "index.md"
     out = strip_redundant_wiki_prefix(wiki_root, rel)
@@ -283,8 +350,8 @@ def dedupe_raw_uris_for_wiki(wiki_root: Path, rel_uris: list[str]) -> list[str]:
 
     Different raw paths (e.g. ``wiki/a.md`` vs ``Session Summaries/a.md``) can
     normalize to the same wiki path after :func:`strip_redundant_wiki_prefix`;
-    without deduping, the same note would be compiled twice and ``Index.md``
-    would list duplicate wikilinks.
+    without deduping, the same note would be compiled twice and ``index.md``
+    would list duplicate links.
     """
     by_out: dict[str, str] = {}
     for rel in sorted(rel_uris, key=lambda r: (len(r), r)):
@@ -311,7 +378,12 @@ def compute_backlinks(
     return back
 
 
-def format_explicit_backlinks_footer(incoming: list[str], *, wiki_root: Path | None = None) -> str:
+def format_explicit_backlinks_footer(
+    incoming: list[str],
+    *,
+    wiki_root: Path | None = None,
+    output_profile: str = "okf",
+) -> str:
     """Footer: notes that **authored** a ``[[wikilink]]`` to this page (Obsidian-true backlinks)."""
     if not incoming:
         return ""
@@ -321,12 +393,20 @@ def format_explicit_backlinks_footer(incoming: list[str], *, wiki_root: Path | N
         "Notes that link here (authored ``[[wikilinks]]``):",
         "",
     ]
-    bl.extend(f"- [[{_footer_wikilink_label(wiki_root, rel)}]]" for rel in sorted(incoming))
+    bl.extend(
+        f"- {_format_note_link(rel, wiki_root=wiki_root, output_profile=output_profile)}"
+        for rel in sorted(incoming)
+    )
     inner = "\n".join(bl)
     return f"\n{BACKLINKS_BEGIN}\n{inner}\n\n{BACKLINKS_END}\n"
 
 
-def format_semantic_incoming_footer(sources: list[str], *, wiki_root: Path | None = None) -> str:
+def format_semantic_incoming_footer(
+    sources: list[str],
+    *,
+    wiki_root: Path | None = None,
+    output_profile: str = "okf",
+) -> str:
     """Footer: notes whose compile-time \"See also\" suggested this page — **not** authored links."""
     if not sources:
         return ""
@@ -337,7 +417,10 @@ def format_semantic_incoming_footer(sources: list[str], *, wiki_root: Path | Non
         "This is not the same as an authored link to this page (see **Backlinks** above)._",
         "",
     ]
-    lines.extend(f"- [[{_footer_wikilink_label(wiki_root, rel)}]]" for rel in sorted(sources))
+    lines.extend(
+        f"- {_format_note_link(rel, wiki_root=wiki_root, output_profile=output_profile)}"
+        for rel in sorted(sources)
+    )
     inner = "\n".join(lines)
     return f"\n{SEMANTIC_IN_BEGIN}\n{inner}\n\n{SEMANTIC_IN_END}\n"
 
@@ -347,14 +430,23 @@ def format_graph_footer(
     incoming_semantic: list[str],
     *,
     wiki_root: Path | None = None,
+    output_profile: str = "okf",
 ) -> str:
     """Append both footers: authored **Backlinks** first, then **Related (semantic)** if any.
 
     Semantic outbound recommendations stay in the **See also** body block
     (:func:`_format_see_also_section`); they are not mixed into the backlinks graph.
     """
-    a = format_explicit_backlinks_footer(incoming_explicit, wiki_root=wiki_root)
-    b = format_semantic_incoming_footer(incoming_semantic, wiki_root=wiki_root)
+    a = format_explicit_backlinks_footer(
+        incoming_explicit,
+        wiki_root=wiki_root,
+        output_profile=output_profile,
+    )
+    b = format_semantic_incoming_footer(
+        incoming_semantic,
+        wiki_root=wiki_root,
+        output_profile=output_profile,
+    )
     return a + b
 
 
@@ -475,6 +567,12 @@ def compile_linked_markdown(
     other_copied = 0
     semantic_edges = sum(len(v) for v in all_semantic.values())
     compiled_at_iso = utc_now_iso()
+    output_profile = "okf"
+    if settings is not None:
+        output_profile = getattr(settings, "output_profile", "okf")
+    okf_type = None
+    if output_profile == "okf":
+        okf_type = "Note"
 
     for rel in rel_uris:
         raw_path = raw_root / rel
@@ -493,23 +591,45 @@ def compile_linked_markdown(
         base = _strip_generated_blocks(contents[rel])
         sem_for_rel = all_semantic.get(rel)
         existing_frontmatter = _frontmatter_map(base)
+        compiled_frontmatter: dict[str, object] = {}
+        if wiki_path.is_file():
+            try:
+                compiled_frontmatter = _frontmatter_map(wiki_path.read_text(encoding="utf-8"))
+            except OSError:
+                compiled_frontmatter = {}
         authored_body_targets = {
             resolved
             for target in extract_wikilink_targets(base)
             for resolved in resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md_set)
         }
+        created_at = None
+        if existing_frontmatter.get(NOTE_CREATED) is None:
+            created_at = str(compiled_frontmatter.get(NOTE_CREATED) or compiled_at_iso)
 
         graph_stats = WikiGraphFrontmatterStats(
             compiled_at_iso=compiled_at_iso,
-            created_at_iso=(compiled_at_iso if existing_frontmatter.get(NOTE_CREATED) is None else None),
+            created_at_iso=created_at,
+            okf_type=okf_type,
         )
         base = merge_wiki_graph_frontmatter(base, stats=graph_stats)
+        if output_profile == "okf":
+            base = _convert_wikilinks_to_markdown_links(
+                base,
+                stem_to_paths=stem_to_paths,
+                title_to_paths=title_to_paths,
+                all_md=all_md_set,
+                wiki_root=wiki_root,
+            )
 
-        # Inject "See also" wikilinks into the body so Obsidian traverses them.
+        # Inject "See also" links into the body so OKF consumers traverse them.
         see_also_targets = [
             target_rel for target_rel in (sem_for_rel or []) if target_rel not in authored_body_targets
         ]
-        see_also = _format_see_also_section(see_also_targets, wiki_root=wiki_root)
+        see_also = _format_see_also_section(
+            see_also_targets,
+            wiki_root=wiki_root,
+            output_profile=output_profile,
+        )
 
         # Dedupe: omit from **Related (semantic)** if that note is already our outbound See also
         # target (same page would list them twice).
@@ -520,7 +640,10 @@ def compile_linked_markdown(
         )
         inc_semantic = sorted(sem_raw - outgoing_sem)
         footer = format_graph_footer(
-            inc_explicit, inc_semantic, wiki_root=wiki_root
+            inc_explicit,
+            inc_semantic,
+            wiki_root=wiki_root,
+            output_profile=output_profile,
         )
         body = base.rstrip() + see_also + footer
         body_bytes = body.encode("utf-8")
@@ -564,15 +687,19 @@ def build_index_entries(
         if title:
             title_to_paths.setdefault(title.lower(), []).append(rel)
 
-    forward_explicit = {
-        rel: extract_wikilink_targets(_strip_generated_blocks(text)) for rel, text in contents.items()
-    }
+    raw_contents: dict[str, str] = {}
+    for rel in contents:
+        try:
+            raw_contents[rel] = (raw_root / rel).read_text(encoding="utf-8")
+        except OSError:
+            raw_contents[rel] = ""
+    forward_explicit = {rel: extract_wikilink_targets(raw_contents[rel]) for rel in contents}
     backlinks_explicit = compute_backlinks(forward_explicit, stem_to_paths, title_to_paths, all_md_set)
 
     semantic_outgoing: dict[str, list[str]] = {}
     semantic_incoming: dict[str, set[str]] = {p: set() for p in all_md_set}
     for rel, text in contents.items():
-        see_also_targets = extract_wikilink_targets(_managed_block_body(text, SEE_ALSO_BEGIN, SEE_ALSO_END))
+        see_also_targets = _extract_link_targets(_managed_block_body(text, SEE_ALSO_BEGIN, SEE_ALSO_END))
         outgoing: list[str] = []
         for target in see_also_targets:
             for resolved in resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md_set):
@@ -580,7 +707,9 @@ def build_index_entries(
                     outgoing.append(resolved)
         semantic_outgoing[rel] = outgoing
 
-        incoming_targets = extract_wikilink_targets(_managed_block_body(text, SEMANTIC_IN_BEGIN, SEMANTIC_IN_END))
+        incoming_targets = _extract_link_targets(
+            _managed_block_body(text, SEMANTIC_IN_BEGIN, SEMANTIC_IN_END)
+        )
         for target in incoming_targets:
             for resolved in resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md_set):
                 if resolved != rel:
@@ -605,8 +734,53 @@ def format_index_markdown(
     *,
     wiki_root: Path | None = None,
     entries: list[IndexNoteEntry] | None = None,
+    output_profile: str = "okf",
 ) -> str:
-    """``Index.md`` registry with wikilinks and compact note metadata."""
+    """``index.md`` registry with note links and compact note metadata."""
+    if output_profile == "okf":
+        lines = [
+            "# Index",
+            "",
+            "Compiled notes:",
+            "",
+        ]
+        if not md_relpaths:
+            lines.append("_No markdown sources._")
+        elif entries:
+            lines.extend(["## Notes", ""])
+            seen_labels: set[str] = set()
+            for entry in sorted(entries, key=lambda item: item.label.lower()):
+                if entry.label in seen_labels:
+                    continue
+                seen_labels.add(entry.label)
+                href = _markdown_link_href(wiki_root, entry.relpath)
+                lines.append(f"* [{entry.label}]({href}) - compiled wiki note")
+                if entry.created:
+                    lines.append(f"  * created: `{entry.created}`")
+                if entry.modified:
+                    lines.append(f"  * modified: `{entry.modified}`")
+                if entry.compiled_from:
+                    lines.append(f"  * source: `{entry.compiled_from}`")
+                if entry.tags:
+                    lines.append("  * tags: " + ", ".join(f"`{tag}`" for tag in entry.tags))
+                lines.append(f"  * explicit_links: {entry.explicit_links}")
+                lines.append(f"  * backlinks: {entry.backlinks}")
+                lines.append(f"  * semantic_outgoing: {entry.semantic_outgoing}")
+                lines.append(f"  * semantic_incoming: {entry.semantic_incoming}")
+                lines.append("")
+        else:
+            seen_labels: set[str] = set()
+            for rel in sorted(md_relpaths):
+                if _skip_index_in_index_listing(wiki_root, rel):
+                    continue
+                label = _footer_wikilink_label(wiki_root, rel)
+                if label in seen_labels:
+                    continue
+                seen_labels.add(label)
+                lines.append(f"* [{label}]({_markdown_link_href(wiki_root, rel)})")
+        lines.append("")
+        return "\n".join(lines)
+
     lines = [
         "---",
         "title: Wiki Index",

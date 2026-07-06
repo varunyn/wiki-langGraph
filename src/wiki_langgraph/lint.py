@@ -17,6 +17,7 @@ from wiki_langgraph.linking import (
     wikilink_display_name,
     _build_stem_index,
     _collect_md_relpaths,
+    _frontmatter_map,
     _frontmatter_title,
 )
 
@@ -52,6 +53,28 @@ class LintReport:
 def _index_wikilink_targets(index_body: str) -> set[str]:
     """All ``[[link]]`` display targets in Index (same extraction as notes, minus embeds)."""
     return extract_wikilink_targets(index_body)
+
+
+_MARKDOWN_LINK = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)]+)\)")
+
+
+def _markdown_link_targets(markdown: str) -> set[str]:
+    """Display labels for local Markdown links."""
+    targets: set[str] = set()
+    for label, href in _MARKDOWN_LINK.findall(markdown):
+        href = href.strip()
+        if not href or re.match(r"^[a-z][a-z0-9+.-]*:", href, flags=re.IGNORECASE):
+            continue
+        targets.add(label.strip())
+    return targets
+
+
+def _index_link_targets(index_body: str) -> set[str]:
+    return _index_wikilink_targets(index_body) | _markdown_link_targets(index_body)
+
+
+def _outgoing_link_targets(markdown: str) -> set[str]:
+    return extract_wikilink_targets(markdown) | _markdown_link_targets(markdown)
 
 
 # Full wikilink (excludes embeds ``![[...]]``): ``[[target]]``, ``[[target|alias]]``, ``[[target#heading]]``.
@@ -101,8 +124,16 @@ def _is_index_note(rel: str, text: str) -> bool:
     return _frontmatter_kind(text) == INDEX_KIND_VALUE
 
 
-def _orphan_check_text(raw_root: Path, wiki_root: Path, rel: str, raw_text: str) -> str:
-    """Use compiled wiki text for orphan checks when it exists."""
+def _is_okf_reserved_file(rel: str) -> bool:
+    return PurePosixPath(rel).name.lower() in {"index.md", "log.md"}
+
+
+def _okf_type(text: str) -> str:
+    value = _frontmatter_map(text).get("type")
+    return str(value or "").strip()
+
+
+def _compiled_or_raw_text(raw_root: Path, wiki_root: Path, rel: str, raw_text: str) -> str:
     wiki_path = wiki_root / strip_redundant_wiki_prefix(wiki_root, rel)
     if wiki_path.is_file():
         try:
@@ -110,6 +141,11 @@ def _orphan_check_text(raw_root: Path, wiki_root: Path, rel: str, raw_text: str)
         except OSError:
             return raw_text
     return raw_text
+
+
+def _orphan_check_text(raw_root: Path, wiki_root: Path, rel: str, raw_text: str) -> str:
+    """Use compiled wiki text for orphan checks when it exists."""
+    return _compiled_or_raw_text(raw_root, wiki_root, rel, raw_text)
 
 
 def suggest_wikilink_replacement(
@@ -257,11 +293,13 @@ def run_lint(
     raw_root: Path,
     wiki_root: Path,
     rel_uris: list[str],
+    *,
+    okf: bool = False,
 ) -> LintReport:
     """Scan markdown under ``raw_root`` for broken wikilinks and Index drift vs catalog.
 
     Uses the same dedupe rules as compile (one catalog path per wiki output file).
-    Expected Index entries use the same labels as :func:`format_index_markdown` (strip prefix).
+    Expected index entries use the same labels as :func:`format_index_markdown` (strip prefix).
     """
     report = LintReport()
     rel_uris = dedupe_raw_uris_for_wiki(wiki_root, list(rel_uris))
@@ -297,13 +335,21 @@ def run_lint(
                     f"from [[{target}]]",
                 )
         orphan_text = _orphan_check_text(raw_root, wiki_root, rel, text)
-        orphan_targets = extract_wikilink_targets(orphan_text)
+        orphan_targets = _outgoing_link_targets(orphan_text)
         if not orphan_targets and not _is_index_note(rel, orphan_text):
             report.add(
                 "W_ORPHAN_NOTE",
-                "markdown note has no outgoing [[wikilinks]]",
+                "markdown note has no outgoing internal links",
                 rel,
-                "add at least one outbound wikilink or exclude this generated/index note",
+                "add at least one outbound internal link or exclude this generated/index note",
+            )
+        okf_text = _compiled_or_raw_text(raw_root, wiki_root, rel, text)
+        if okf and not _is_okf_reserved_file(rel) and not _okf_type(okf_text):
+            report.add(
+                "W_OKF_MISSING_TYPE",
+                "OKF concept document is missing required frontmatter field: type",
+                rel,
+                "add YAML frontmatter with a non-empty type value",
             )
 
     for rel in md_relpaths:
@@ -332,16 +378,16 @@ def run_lint(
             continue
         expected_index_labels.add(wikilink_display_name(strip_redundant_wiki_prefix(wiki_root, rel)))
 
-    index_path = wiki_root / "Index.md"
+    index_path = wiki_root / "index.md"
     if index_path.is_file():
         try:
             idx_text = index_path.read_text(encoding="utf-8")
         except OSError:
             idx_text = ""
-        idx_targets = {target for target in _index_wikilink_targets(idx_text) if target.lower() != "index"}
+        idx_targets = {target for target in _index_link_targets(idx_text) if target.lower() != "index"}
         missing_in_index = expected_index_labels - idx_targets
         extra_in_index = idx_targets - expected_index_labels
-        idx_label = "Index.md"
+        idx_label = "index.md"
         for m in sorted(missing_in_index):
             report.add(
                 "W_INDEX_DRIFT",

@@ -295,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(line)
             suffix = " (dry-run)" if args.dry_run else ""
             print(f"fix: {n_files} file(s), {n_rep} replacement(s){suffix}")
-        report = run_lint(raw, wiki, uris)
+        report = run_lint(raw, wiki, uris, okf=settings.output_profile == "okf")
         for issue in report.issues:
             loc = f"{issue.path}: " if issue.path else ""
             detail = f" ({issue.detail})" if issue.detail else ""

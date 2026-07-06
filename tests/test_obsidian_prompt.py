@@ -43,7 +43,7 @@ def test_load_custom_skill_path(tmp_path: Path) -> None:
 def test_wiki_llm_system_instructions_appends_task() -> None:
     """Optional task hint should appear after the skill body."""
     out = wiki_llm_system_instructions(
-        task_hint="Summarize the raw files into Index.md.",
+        task_hint="Summarize the raw files into index.md.",
         settings=Settings(obsidian_markdown_skill_path=None),
     )
     assert "Properties (Frontmatter)" in out

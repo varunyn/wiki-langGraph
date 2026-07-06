@@ -41,3 +41,16 @@ def test_llm_compile_review_accepts_supported_modes() -> None:
 def test_llm_compile_review_invalid_falls_back_to_off() -> None:
     """Unexpected review mode values fall back to current behavior."""
     assert Settings(llm_compile_review="maybe").llm_compile_review == "off"
+
+
+def test_output_profile_default_and_supported_modes() -> None:
+    """Output profile defaults to OKF and normalizes supported modes."""
+    assert Settings().output_profile == "okf"
+    assert Settings(output_profile="OKF").output_profile == "okf"
+    assert Settings(output_profile="obsidian").output_profile == "obsidian"
+
+
+def test_output_profile_invalid_falls_back_to_okf() -> None:
+    """Unexpected profile values preserve canonical OKF behavior."""
+    assert Settings(output_profile="unknown").output_profile == "okf"
+    assert Settings(output_profile="hybrid").output_profile == "okf"

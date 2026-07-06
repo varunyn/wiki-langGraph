@@ -33,6 +33,12 @@ class Settings(BaseSettings):
         default=None,
         description="Override for compiled wiki markdown; default data/wiki under project_root.",
     )
+    output_profile: str = Field(
+        default="okf",
+        description=(
+            "Compiled markdown profile: okf (Open Knowledge Format) or obsidian (legacy wikilink vault)."
+        ),
+    )
 
     openai_api_base: str | None = Field(
         default=None,
@@ -188,6 +194,15 @@ class Settings(BaseSettings):
             return value.lower() in ("1", "true", "yes", "on")
         return bool(value)
 
+    @field_validator("output_profile", mode="before")
+    @classmethod
+    def _output_profile(cls, value: object) -> str:
+        if isinstance(value, str):
+            x = value.lower().strip()
+            if x in {"obsidian", "okf"}:
+                return x
+        return "okf"
+
     @field_validator("semantic_backend", mode="before")
     @classmethod
     def _semantic_backend(cls, value: object) -> str:
@@ -316,7 +331,7 @@ class Settings(BaseSettings):
         return self.data_raw_dir or (self.project_root / "data" / "raw")
 
     def wiki_dir(self) -> Path:
-        """Directory for generated Obsidian-style markdown wiki pages."""
+        """Directory for generated OKF markdown wiki pages."""
         return self.data_wiki_dir or (self.project_root / "data" / "wiki")
 
     def resolved_manifest_path(self) -> Path:

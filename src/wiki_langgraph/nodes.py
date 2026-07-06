@@ -29,6 +29,7 @@ from wiki_langgraph.review_queue import assess_candidate, candidate_root, write_
 from wiki_langgraph.state import WikiGraphState
 
 logger = logging.getLogger("wiki_langgraph.nodes")
+INDEX_FILENAME = "index.md"
 
 
 def _raw_file_relpaths(raw: Path, *, exclude_dir: Path | None = None) -> list[str]:
@@ -59,6 +60,27 @@ def _raw_file_relpaths(raw: Path, *, exclude_dir: Path | None = None) -> list[st
     return sorted(rels)
 
 
+def _canonical_index_path(wiki_root: Path) -> Path:
+    """Return the OKF index path, migrating legacy ``Index.md`` casing if needed."""
+    target = wiki_root / INDEX_FILENAME
+    has_lowercase_entry = any(path.name == INDEX_FILENAME for path in wiki_root.iterdir())
+    for path in wiki_root.iterdir():
+        if path.name.lower() != INDEX_FILENAME or path.name == INDEX_FILENAME:
+            continue
+        if has_lowercase_entry:
+            path.unlink()
+            continue
+        tmp = wiki_root / f".{path.name}.wiki-langgraph-rename"
+        suffix = 0
+        while tmp.exists():
+            suffix += 1
+            tmp = wiki_root / f".{path.name}.wiki-langgraph-rename-{suffix}"
+        path.rename(tmp)
+        tmp.rename(target)
+        has_lowercase_entry = True
+    return target
+
+
 def node_ingest(_state: object, *, settings: Settings | None = None) -> dict[str, object]:
     """List existing raw files or create the raw directory; records relative URIs.
 
@@ -82,14 +104,11 @@ def node_ingest(_state: object, *, settings: Settings | None = None) -> dict[str
 
 
 def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None) -> dict[str, object]:
-    """Compile raw markdown into ``wiki_dir`` with resolved backlinks (Obsidian wikilinks).
+    """Compile raw markdown into ``wiki_dir`` with OKF links and resolved backlinks.
 
-    Copies each file from the raw tree, appends a **Backlinks** section derived from
-    ``[[wikilinks]]`` in the vault (see https://obsidian.md/help/links). Regenerates
-    ``Index.md`` with wikilinks to every markdown note.
-
-    When wiring an LLM, use :func:`wiki_langgraph.obsidian_prompt.wiki_llm_system_instructions`
-    so generated notes follow Obsidian frontmatter and OFM (wikilinks, callouts, etc.).
+    Copies each file from the raw tree, converts resolved source wikilinks to
+    standard Markdown links for the default OKF profile, appends a **Backlinks**
+    section derived from authored source links, and regenerates ``index.md``.
     """
     cfg = settings or load_settings()
     raw = cfg.raw_dir()
@@ -235,13 +254,18 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
         )
     md_list = [rel for rel in md_only if rel not in queued_new_rels]
     index_entries = build_index_entries(raw, wiki, compile_uris)
-    (wiki / "Index.md").write_text(
-        format_index_markdown(md_list, wiki_root=wiki, entries=index_entries),
+    _canonical_index_path(wiki).write_text(
+        format_index_markdown(
+            md_list,
+            wiki_root=wiki,
+            entries=index_entries,
+            output_profile=cfg.output_profile,
+        ),
         encoding="utf-8",
     )
     compile_msg = (
         f"compile: wiki_dir={wiki} md_notes={md_n} other_files={other_n} "
-        f"semantic_edges={sem_edges} index_wikilinks={len(md_list)}"
+        f"semantic_edges={sem_edges} index_links={len(md_list)}"
     )
     if queued_review_count:
         compile_msg += f" llm_review_queued={queued_review_count}"
@@ -290,7 +314,7 @@ def node_lint(_state: object, *, settings: Settings | None = None) -> dict[str, 
     raw = cfg.raw_dir()
     wiki = cfg.wiki_dir()
     uris = _raw_file_relpaths(raw, exclude_dir=wiki)
-    report = run_lint(raw, wiki, uris)
+    report = run_lint(raw, wiki, uris, okf=cfg.output_profile == "okf")
     n = len(report.issues)
     if n == 0:
         ok_msg = "lint: ok (0 issues)"

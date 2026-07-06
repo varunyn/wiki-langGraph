@@ -20,7 +20,7 @@ class WikiGraphState(TypedDict, total=False):
     Attributes:
         step_log: Append-only trace of node actions for debugging.
         raw_uris: Relative paths under the raw directory from recursive ingest.
-        index_md_written: Whether compile regenerated ``Index.md`` this run (when compile runs).
+        index_md_written: Whether compile regenerated ``index.md`` this run (when compile runs).
         last_error: Set when a node fails; downstream nodes may branch on this.
     """
 

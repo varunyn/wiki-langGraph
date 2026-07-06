@@ -80,22 +80,46 @@ def test_run_once_returns_step_log(tmp_path: Path) -> None:
     assert isinstance(state.get("step_log"), list)
 
 
-def test_compile_overwrites_index_each_run(tmp_path: Path) -> None:
-    """Index.md and compiled notes should refresh each run (wikilinks + backlinks)."""
+def test_compile_overwrites_lowercase_index_each_run(tmp_path: Path) -> None:
+    """index.md and compiled notes should refresh each run using OKF markdown links."""
     cfg = _isolated_settings(tmp_path)
-    index = cfg.wiki_dir() / "Index.md"
-    index.write_text("old content\n", encoding="utf-8")
+    legacy_index = cfg.wiki_dir() / "Index.md"
+    legacy_index.write_text("old content\n", encoding="utf-8")
     (cfg.raw_dir() / "note.md").write_text("# N\n\nBody.\n", encoding="utf-8")
     (cfg.raw_dir() / "only.txt").write_text("x", encoding="utf-8")
 
     state = run_once(settings=cfg)
+    index = cfg.wiki_dir() / "index.md"
     text = index.read_text(encoding="utf-8")
     assert "old content" not in text
-    assert "[[note]]" in text
+    assert "* [note](note.md) - compiled wiki note" in text
+    assert "[[note]]" not in text
+    assert any(path.name == "index.md" for path in cfg.wiki_dir().iterdir())
+    assert not any(path.name == "Index.md" for path in cfg.wiki_dir().iterdir())
     assert state.get("index_md_written") is True
     compiled = (cfg.wiki_dir() / "note.md").read_text(encoding="utf-8")
     assert "Body." in compiled
     assert "<!-- wiki-langgraph backlinks -->" not in compiled
+
+
+def test_compile_default_profile_writes_markdown_link_index(tmp_path: Path) -> None:
+    """Default profile writes an OKF-style markdown-link index body."""
+    cfg = _isolated_settings(tmp_path)
+    cfg = Settings(
+        project_root=tmp_path,
+        data_raw_dir=cfg.raw_dir(),
+        data_wiki_dir=cfg.wiki_dir(),
+        qmd_refresh=False,
+    )
+    (cfg.raw_dir() / "note.md").write_text("---\ntype: Note\n---\n\n# N\n\n[[note]]\n", encoding="utf-8")
+
+    state = run_once(settings=cfg)
+    text = (cfg.wiki_dir() / "index.md").read_text(encoding="utf-8")
+
+    assert state.get("index_md_written") is True
+    assert not text.startswith("---")
+    assert "* [note](note.md) - compiled wiki note" in text
+    assert "[[note]]" not in text
 
 
 def test_ingest_lists_nested_files(tmp_path: Path) -> None:
@@ -126,7 +150,7 @@ def test_ingest_skips_nested_wiki_output_dir(tmp_path: Path) -> None:
     wiki = raw / "wiki"
     wiki.mkdir(parents=True)
     (raw / "source.md").write_text("# Source\n", encoding="utf-8")
-    (wiki / "Index.md").write_text("# Index\n\n[[source]]\n", encoding="utf-8")
+    (wiki / "index.md").write_text("# Index\n\n[[source]]\n", encoding="utf-8")
     (wiki / "source.md").write_text("# Generated\n", encoding="utf-8")
 
     out = node_ingest(

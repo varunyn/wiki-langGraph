@@ -29,6 +29,7 @@ class WikiGraphFrontmatterStats:
 
     compiled_at_iso: str
     created_at_iso: str | None = None
+    okf_type: str | None = None
 
 
 def _normalize_tags(raw: object) -> list[str]:
@@ -119,7 +120,10 @@ def merge_wiki_graph_frontmatter(markdown: str, *, stats: WikiGraphFrontmatterSt
             stats = WikiGraphFrontmatterStats(
                 compiled_at_iso=stats.compiled_at_iso,
                 created_at_iso=_iso_like_string(created_value),
+                okf_type=stats.okf_type,
             )
+        if stats.okf_type and not str(frontmatter.get("type") or "").strip():
+            frontmatter["type"] = stats.okf_type
         _apply_managed_wiki_graph_keys(frontmatter, _flat_wiki_graph_properties(stats))
         dumped = yaml.dump(
             frontmatter,
@@ -133,7 +137,10 @@ def merge_wiki_graph_frontmatter(markdown: str, *, stats: WikiGraphFrontmatterSt
             dumped += "\n"
         return f"---\n{dumped}---\n{rest}"
 
-    data = dict(_flat_wiki_graph_properties(stats))
+    data = {}
+    if stats.okf_type:
+        data["type"] = stats.okf_type
+    data.update(_flat_wiki_graph_properties(stats))
     dumped = yaml.dump(
         data,
         allow_unicode=True,

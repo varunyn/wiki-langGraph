@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from wiki_langgraph.config import Settings
 from wiki_langgraph.linking import (
     BACKLINKS_BEGIN,
     IndexNoteEntry,
@@ -66,6 +67,23 @@ def test_compile_skips_identical_content_write(tmp_path: Path) -> None:
     assert first_created == second_created
 
 
+def test_compile_preserves_existing_created_frontmatter_across_runs(tmp_path: Path) -> None:
+    """Repeat compiles preserve the original created timestamp from the compiled note."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "solo.md").write_text("# Solo\n\nNo links.\n", encoding="utf-8")
+
+    with patch("wiki_langgraph.linking.utc_now_iso", side_effect=["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"]):
+        compile_linked_markdown(raw, wiki, ["solo.md"])
+        compile_linked_markdown(raw, wiki, ["solo.md"])
+
+    out = (wiki / "solo.md").read_text(encoding="utf-8")
+
+    assert "created: '2026-01-01T00:00:00Z'" in out
+    assert "modified: '2026-01-02T00:00:00Z'" in out
+
+
 def test_compile_semantic_cache_hit_skips_recompute(tmp_path: Path) -> None:
     """semantic_cache with matching hash prevents calling the backend."""
     import hashlib
@@ -116,10 +134,10 @@ def test_compile_backlinks_round_trip(tmp_path: Path) -> None:
 
     b_out = (wiki / "b.md").read_text(encoding="utf-8")
     assert "## Backlinks" in b_out
-    assert "[[a]]" in b_out
+    assert "[a](a.md)" in b_out
 
     a_out = (wiki / "a.md").read_text(encoding="utf-8")
-    assert "See [[b]]" in a_out
+    assert "See [b](b.md)" in a_out
     assert "<!-- wiki-langgraph backlinks -->" not in a_out
 
 
@@ -135,20 +153,84 @@ def test_no_footer_when_no_links(tmp_path: Path) -> None:
     assert "<!-- wiki-langgraph backlinks -->" not in out
 
 
+def test_compile_default_profile_adds_okf_type_frontmatter(tmp_path: Path) -> None:
+    """Default output keeps markdown body and adds the required OKF concept type."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "solo.md").write_text("# Solo\n\nNo links.\n", encoding="utf-8")
+    settings = Settings(
+        data_raw_dir=raw,
+        data_wiki_dir=wiki,
+    )
+
+    compile_linked_markdown(raw, wiki, ["solo.md"], settings=settings)
+
+    out = (wiki / "solo.md").read_text(encoding="utf-8")
+    assert out.startswith("---\ntype: Note\n")
+    assert "wiki_langgraph_version: 1" in out
+    assert "# Solo" in out
+
+
+def test_compile_okf_profile_converts_body_wikilinks_to_markdown_links(tmp_path: Path) -> None:
+    """Authored wikilinks are accepted as input but compiled as OKF markdown links."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "a.md").write_text("# A\n\nSee [[b]] and [[b|Bee]].\n", encoding="utf-8")
+    (raw / "b.md").write_text("# B\n\nTopic.\n", encoding="utf-8")
+
+    compile_linked_markdown(raw, wiki, ["a.md", "b.md"], settings=Settings(data_raw_dir=raw, data_wiki_dir=wiki))
+
+    out = (wiki / "a.md").read_text(encoding="utf-8")
+    assert "See [b](b.md) and [Bee](b.md)." in out
+    assert "[[b]]" not in out
+    assert "[[b|Bee]]" not in out
+
+
+def test_compile_okf_profile_uses_markdown_links_for_generated_graph_sections(tmp_path: Path) -> None:
+    """OKF output uses standard markdown links for generated navigation."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "a.md").write_text("# A\n\nBody.\n", encoding="utf-8")
+    (raw / "b.md").write_text("# B\n\nSee [[a]].\n", encoding="utf-8")
+    settings = Settings(
+        data_raw_dir=raw,
+        data_wiki_dir=wiki,
+        output_profile="okf",
+    )
+    body_hash = hashlib.sha256("# A\n\nBody.\n".encode()).hexdigest()
+
+    compile_linked_markdown(
+        raw,
+        wiki,
+        ["a.md", "b.md"],
+        settings=settings,
+        semantic_cache={"a.md": {"hash": body_hash, "edges": ["b.md"]}},
+    )
+
+    out = (wiki / "a.md").read_text(encoding="utf-8")
+    assert "**See also:** [b](b.md)" in out
+    assert "- [b](b.md)" in out
+    assert "[[b]]" not in out
+
+
 def test_format_index_wikilinks() -> None:
-    """Index lists notes as internal links."""
-    text = format_index_markdown(["z/a.md", "b.md"])
+    """Legacy Obsidian profile can still list notes as wikilinks."""
+    text = format_index_markdown(["z/a.md", "b.md"], output_profile="obsidian")
     assert "[[z/a]]" in text
     assert "[[b]]" in text
 
 
 def test_format_index_skips_index_md_and_dedupes_labels(tmp_path: Path) -> None:
-    """Do not list Index.md in the index; one line per distinct wikilink label."""
+    """Do not list index.md in the index; one line per distinct wikilink label."""
     wiki = tmp_path / "vault" / "wiki"
     wiki.mkdir(parents=True)
     text = format_index_markdown(
-        ["Index.md", "note.md", "wiki/n.md", "n.md"],
+        ["index.md", "note.md", "wiki/n.md", "n.md"],
         wiki_root=wiki,
+        output_profile="obsidian",
     )
     assert "[[Index]]" not in text
     assert text.count("[[n]]") == 1
@@ -172,6 +254,7 @@ def test_format_index_rich_entries_include_agent_metadata() -> None:
                 semantic_incoming=4,
             )
         ],
+        output_profile="obsidian",
     )
     assert "### [[note]]" in text
     assert "- path: `note.md`" in text
@@ -183,6 +266,31 @@ def test_format_index_rich_entries_include_agent_metadata() -> None:
     assert "- backlinks: 1" in text
     assert "- semantic_outgoing: 3" in text
     assert "- semantic_incoming: 4" in text
+
+
+def test_format_index_okf_profile_uses_standard_markdown_links() -> None:
+    text = format_index_markdown(
+        ["notes/a.md"],
+        entries=[
+            IndexNoteEntry(
+                relpath="notes/a.md",
+                label="a",
+                created="2026-01-01T00:00:00Z",
+                modified="2026-01-02T00:00:00Z",
+                tags=("agent",),
+                explicit_links=1,
+                backlinks=0,
+                semantic_outgoing=0,
+                semantic_incoming=0,
+            )
+        ],
+        output_profile="okf",
+    )
+
+    assert not text.startswith("---")
+    assert "* [a](notes/a.md) - compiled wiki note" in text
+    assert "[[a]]" not in text
+    assert "created: `2026-01-01T00:00:00Z`" in text
 
 
 def test_build_index_entries_counts_semantic_blocks(tmp_path: Path) -> None:
@@ -224,11 +332,29 @@ def test_build_index_entries_skips_generated_index_note(tmp_path: Path) -> None:
     wiki.mkdir()
     (raw / "note.md").write_text("# Note\n\nBody.\n", encoding="utf-8")
     (wiki / "note.md").write_text("# Note\n\nBody.\n", encoding="utf-8")
-    (wiki / "Index.md").write_text("# Index\n\n[[note]]\n", encoding="utf-8")
+    (wiki / "index.md").write_text("# Index\n\n[[note]]\n", encoding="utf-8")
 
-    entries = build_index_entries(raw, wiki, ["note.md", "wiki/Index.md"])
+    entries = build_index_entries(raw, wiki, ["note.md", "wiki/index.md"])
 
     assert [entry.label for entry in entries] == ["note"]
+
+
+def test_build_index_entries_counts_authored_links_from_okf_compiled_notes(tmp_path: Path) -> None:
+    """OKF Markdown conversion must not erase authored graph counts in the index."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "a.md").write_text("# A\n\nSee [[b]].\n", encoding="utf-8")
+    (raw / "b.md").write_text("# B\n\nBody.\n", encoding="utf-8")
+
+    settings = Settings(data_raw_dir=raw, data_wiki_dir=wiki)
+    compile_linked_markdown(raw, wiki, ["a.md", "b.md"], settings=settings)
+
+    entries = build_index_entries(raw, wiki, ["a.md", "b.md"])
+    by_label = {entry.label: entry for entry in entries}
+
+    assert by_label["a"].explicit_links == 1
+    assert by_label["b"].backlinks == 1
 
 
 def test_compile_see_also_excludes_notes_already_linked_in_body(tmp_path: Path) -> None:
@@ -254,8 +380,8 @@ def test_compile_see_also_excludes_notes_already_linked_in_body(tmp_path: Path) 
     )
 
     text = (wiki / "a.md").read_text(encoding="utf-8")
-    assert "**See also:** [[c]]" in text
-    assert "**See also:** [[b]]" not in text
+    assert "**See also:** [c](c.md)" in text
+    assert "**See also:** [b](b.md)" not in text
 
 
 def test_compile_initializes_created_and_modified_on_new_note(tmp_path: Path) -> None:
@@ -306,12 +432,12 @@ def test_compile_avoids_nested_wiki_folder(tmp_path: Path) -> None:
     assert not (wiki / "wiki").exists()
 
     b_out = (wiki / "b.md").read_text(encoding="utf-8")
-    assert "[[a]]" in b_out
-    assert "[[wiki/a]]" not in b_out
+    assert "[a](a.md)" in b_out
+    assert "[wiki/a](wiki/a.md)" not in b_out
 
 
 def test_semantic_two_pass_injects_see_also_and_backlinks(tmp_path: Path) -> None:
-    """Semantic edges appear as See also outbound [[wikilinks]]; inbound semantic
+    """Semantic edges appear as See also outbound links; inbound semantic
     references show under **Related (semantic)**, not under **Backlinks** (authored links only).
     """
     from wiki_langgraph.config import Settings
@@ -349,15 +475,15 @@ def test_semantic_two_pass_injects_see_also_and_backlinks(tmp_path: Path) -> Non
     new_out = (wiki / "new.md").read_text(encoding="utf-8")
     existing_out = (wiki / "existing.md").read_text(encoding="utf-8")
 
-    # new.md must contain a managed See-also block with a wikilink to existing.
+    # new.md must contain a managed See-also block with a markdown link to existing.
     assert SEE_ALSO_BEGIN in new_out
     assert SEE_ALSO_END in new_out
-    assert "[[existing]]" in new_out
+    assert "[existing](existing.md)" in new_out
 
     # existing.md lists new under Related (semantic), not Backlinks (no authored link).
     assert "## Related (semantic)" in existing_out
     assert SEMANTIC_IN_BEGIN in existing_out
-    assert "[[new]]" in existing_out
+    assert "[new](new.md)" in existing_out
     assert "## Backlinks" not in existing_out
 
 
@@ -424,11 +550,11 @@ def test_mutual_semantic_edges_dedupe_backlinks_footer(tmp_path: Path) -> None:
     a_out = (wiki / "a.md").read_text(encoding="utf-8")
     b_out = (wiki / "b.md").read_text(encoding="utf-8")
 
-    assert "[[b]]" in a_out
+    assert "[b](b.md)" in a_out
     assert BACKLINKS_BEGIN not in a_out
     assert SEMANTIC_IN_BEGIN not in a_out  # inbound B deduped: already in this note's See also
 
-    assert "[[a]]" in b_out
+    assert "[a](a.md)" in b_out
     assert BACKLINKS_BEGIN not in b_out
     assert SEMANTIC_IN_BEGIN not in b_out  # symmetric: inbound A deduped vs outbound See also
 

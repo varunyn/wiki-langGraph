@@ -20,13 +20,13 @@ def test_lint_unresolved_wikilink(tmp_path: Path) -> None:
 
 
 def test_lint_index_missing_entry(tmp_path: Path) -> None:
-    """When Index exists but omits a catalog label, report drift."""
+    """When index.md exists but omits a catalog label, report drift."""
     raw = tmp_path / "raw"
     wiki = tmp_path / "wiki"
     raw.mkdir()
     wiki.mkdir()
     (raw / "note.md").write_text("# N\n\nok\n", encoding="utf-8")
-    (wiki / "Index.md").write_text(
+    (wiki / "index.md").write_text(
         "---\ntitle: Index\n---\n# Index\n\n- [[other]]\n",
         encoding="utf-8",
     )
@@ -41,11 +41,25 @@ def test_lint_index_drift_ignores_generated_index_self_link(tmp_path: Path) -> N
     raw.mkdir()
     wiki.mkdir()
     (raw / "note.md").write_text("# N\n\nok\n", encoding="utf-8")
-    (wiki / "Index.md").write_text("# Index\n\n- [[note]]\n- [[Index]]\n", encoding="utf-8")
+    (wiki / "index.md").write_text("# Index\n\n- [[note]]\n- [[Index]]\n", encoding="utf-8")
 
     r = run_lint(raw, wiki, ["note.md"])
 
     assert not any(i.code == "W_INDEX_DRIFT" and "[[Index]]" in i.message for i in r.issues)
+
+
+def test_lint_index_accepts_markdown_link_entries(tmp_path: Path) -> None:
+    """OKF-style Markdown links in Index satisfy index drift lint."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "note.md").write_text("# N\n\nBody.\n", encoding="utf-8")
+    (wiki / "index.md").write_text("# Index\n\n* [note](note.md) - compiled wiki note\n", encoding="utf-8")
+
+    r = run_lint(raw, wiki, ["note.md"])
+
+    assert not any(i.code == "W_INDEX_DRIFT" for i in r.issues)
 
 
 def test_lint_stale_wiki_when_raw_newer(tmp_path: Path) -> None:
@@ -195,15 +209,30 @@ def test_lint_uses_compiled_wiki_links_for_orphan_warning(tmp_path: Path) -> Non
     assert not any(issue.code == "W_ORPHAN_NOTE" and issue.path == "source.md" for issue in report.issues)
 
 
+def test_lint_uses_compiled_markdown_links_for_orphan_warning(tmp_path: Path) -> None:
+    """A compiled OKF markdown link should count as an outgoing note link."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "source.md").write_text("# Source\n\nRaw body only.\n", encoding="utf-8")
+    (raw / "target.md").write_text("# Target\n\nRaw body only.\n", encoding="utf-8")
+    (wiki / "source.md").write_text("# Source\n\n[Target](target.md)\n", encoding="utf-8")
+
+    report = run_lint(raw, wiki, ["source.md", "target.md"])
+
+    assert not any(issue.code == "W_ORPHAN_NOTE" and issue.path == "source.md" for issue in report.issues)
+
+
 def test_lint_skips_generated_index_note_for_orphan_warning(tmp_path: Path) -> None:
     """Index notes are exempt from the zero-outgoing-links warning."""
     raw = tmp_path / "raw"
     wiki = tmp_path / "wiki"
     raw.mkdir()
     wiki.mkdir()
-    (raw / "Index.md").write_text("# Index\n\nGenerated index.\n", encoding="utf-8")
+    (raw / "index.md").write_text("# Index\n\nGenerated index.\n", encoding="utf-8")
 
-    report = run_lint(raw, wiki, ["Index.md"])
+    report = run_lint(raw, wiki, ["index.md"])
 
     assert not any(issue.code == "W_ORPHAN_NOTE" for issue in report.issues)
 
@@ -222,3 +251,34 @@ def test_lint_skips_frontmatter_index_note_for_orphan_warning(tmp_path: Path) ->
     report = run_lint(raw, wiki, ["summary.md"])
 
     assert not any(issue.code == "W_ORPHAN_NOTE" for issue in report.issues)
+
+
+def test_lint_okf_requires_type_frontmatter_for_concepts(tmp_path: Path) -> None:
+    """OKF lint reports concept documents that lack a required type field."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "typed.md").write_text("---\ntype: Note\n---\n\n# Typed\n\n[[missing]]\n", encoding="utf-8")
+    (raw / "missing.md").write_text("# Missing Type\n\n[[typed]]\n", encoding="utf-8")
+    (raw / "index.md").write_text("# Index\n\n* [Typed](typed.md) - typed note\n", encoding="utf-8")
+
+    report = run_lint(raw, wiki, ["typed.md", "missing.md", "index.md"], okf=True)
+
+    assert any(issue.code == "W_OKF_MISSING_TYPE" and issue.path == "missing.md" for issue in report.issues)
+    assert not any(issue.code == "W_OKF_MISSING_TYPE" and issue.path == "typed.md" for issue in report.issues)
+    assert not any(issue.code == "W_OKF_MISSING_TYPE" and issue.path == "index.md" for issue in report.issues)
+
+
+def test_lint_okf_type_can_come_from_compiled_wiki_note(tmp_path: Path) -> None:
+    """OKF lint validates the compiled wiki artifact when it exists."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "loose.md").write_text("# Loose\n\nRaw without frontmatter.\n", encoding="utf-8")
+    (wiki / "loose.md").write_text("---\ntype: Note\n---\n\n# Loose\n", encoding="utf-8")
+
+    report = run_lint(raw, wiki, ["loose.md"], okf=True)
+
+    assert not any(issue.code == "W_OKF_MISSING_TYPE" for issue in report.issues)
