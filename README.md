@@ -45,6 +45,19 @@ cp .env.example .env   # optional; set paths and features below
 
 Settings load from the environment with prefix **`WIKI_`** (and optional **`.env`** in the current working directory). **`cp .env.example .env`** is the usual starting point; adjust only what you use.
 
+### OKF quick start
+
+The default output profile is already OKF. To make it explicit in `.env` and compile a raw markdown corpus:
+
+```bash
+WIKI_OUTPUT_PROFILE=okf
+uv run wiki-langgraph run -v
+```
+
+This reads notes recursively from `data/raw` and writes the generated OKF wiki to `data/wiki`. Each compiled concept note receives `type: Note` frontmatter, resolved internal links use standard Markdown syntax, and the root registry is written to `data/wiki/index.md`.
+
+Open the generated `data/wiki/` directory in any Markdown-compatible tool, including Obsidian. The legacy Obsidian output remains available with `WIKI_OUTPUT_PROFILE=obsidian`.
+
 ## Run
 
 ```bash
