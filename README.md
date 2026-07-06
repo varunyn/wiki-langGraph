@@ -1,20 +1,21 @@
 # wiki-langgraph
 
-LangGraph pipeline that **ingests** raw markdown, **compiles** an Obsidian-style vault (wikilinks, authored backlinks, semantic `See also`, `Index.md`), optionally runs **LLM authoring**, supports **query → save → future context** compounding, refreshes a local **[QMD](https://github.com/tobi/qmd)** index when enabled, and **lints** the vault.
+LangGraph pipeline that **ingests** raw markdown, **compiles** an **Open Knowledge Format (OKF)** markdown wiki (frontmatter, standard Markdown links, authored backlinks, semantic `See also`, `index.md`), optionally runs **LLM authoring**, supports **query → save → future context** compounding, refreshes a local **[QMD](https://github.com/tobi/qmd)** index when enabled, and **lints** the wiki.
 
 ## What it does now
 
-- Compiles raw markdown into a generated Obsidian wiki.
+- Compiles raw markdown into a generated OKF markdown wiki that can be opened in Obsidian or any Markdown tool.
 - Preserves provenance with `compiled_from:` frontmatter.
+- Adds the OKF-required `type:` frontmatter field and uses standard Markdown links for generated navigation.
 - Keeps authored **Backlinks** separate from semantic **See also** / **Related (semantic)** suggestions.
-- Generates a rich `Index.md` with note metadata and graph counts.
+- Generates a rich OKF `index.md` with note metadata and graph counts.
 - Supports incremental LLM compile with optional enrichment of existing wiki notes.
 - Adds a risk-based review queue for generated LLM candidates.
 - Lets you ask questions over the compiled wiki with `query`.
 - Lets you synthesize deeper research briefs with `research`.
 - Lets you save useful answers under raw `Queries/`, then compile them into future query context.
 - Optionally uses QMD for semantic related-note lookup and index/embed refresh.
-- Lints unresolved wikilinks, orphan notes, stale output, and index drift.
+- Lints unresolved input wikilinks, orphan notes, stale output, OKF type frontmatter, and index drift.
 - Excludes the configured generated wiki directory from ingest when it lives inside the raw vault.
 
 ## Background: the “LLM Wiki” pattern
@@ -75,9 +76,9 @@ uv run wiki-langgraph version
 `wiki-langgraph lint` checks the raw/wiki pair for a few high-signal problems:
 
 - unresolved `[[wikilinks]]` inside the ingested raw tree
-- markdown notes with **no outgoing `[[wikilinks]]`** (`W_ORPHAN_NOTE`), which are often suspect when the source corpus is incomplete or incorrectly split
+- markdown notes with **no outgoing internal links** (`W_ORPHAN_NOTE`), which are often suspect when the source corpus is incomplete or incorrectly split
 - raw notes newer than their compiled wiki output (`W_STALE_WIKI`)
-- `Index.md` drift versus the compiled note catalog
+- `index.md` drift versus the compiled note catalog
 
 Generated index notes are exempt from the orphan-note warning. To clean unresolved links automatically:
 
@@ -117,7 +118,7 @@ compiled wiki:
   wiki/Queries/How should I debug RAG failures.md
 ```
 
-The raw `Queries/` note is the source of truth. The compiled `wiki/Queries/` page is generated output and appears in `Index.md` like any other compiled note.
+The raw `Queries/` note is the source of truth. The compiled `wiki/Queries/` page is generated output and appears in `index.md` like any other compiled note.
 
 ### Research briefs
 
@@ -141,8 +142,11 @@ All names are listed in **`.env.example`**. Below is what matters and when to se
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WIKI_DATA_RAW_DIR`  | Root folder to **ingest** (recursive). Default: `<project>/data/raw`.                                                                                                                           |
 | `WIKI_DATA_WIKI_DIR` | **Compiled vault** output. Default: `<project>/data/wiki`. Set this when your vault lives inside a larger Obsidian tree; see `.env.example` for avoiding duplicated `wiki/wiki/` path segments. |
+| `WIKI_OUTPUT_PROFILE` | `okf` (default) or `obsidian` (legacy). `okf` emits OKF-compatible concept frontmatter (`type: Note`) and standard Markdown links in compiled body content, generated navigation sections, and the generated index body. |
 
 If unset, paths are derived from the package location (repo root when developing). If `WIKI_DATA_WIKI_DIR` is inside `WIKI_DATA_RAW_DIR`, the generated wiki folder is excluded from ingest and lint source enumeration so generated pages do not feed back as raw input.
+
+The compiler writes the generated root registry to OKF's reserved lowercase `index.md`. If a legacy generated `Index.md` exists, compile migrates the directory entry to lowercase before writing the new registry.
 
 ### OpenAI-compatible LLM (chat HTTP)
 
@@ -181,7 +185,7 @@ Risky candidates include existing-note overwrites, empty or very short output, m
 
 | Variable                                                             | Purpose                                                                             |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `WIKI_SEMANTIC_LINKS`                                                | If `true`, compile suggests related notes (separate from authored `[[wikilinks]]`). |
+| `WIKI_SEMANTIC_LINKS`                                                | If `true`, compile suggests related notes (separate from authored source links). |
 | `WIKI_SEMANTIC_BACKEND`                                              | `llm` (needs API base) or `qmd` (local CLI).                                        |
 | `WIKI_QMD_BIN`, `WIKI_QMD_COLLECTION`                                | QMD executable and collection name for `qmd query` / refresh.                       |
 | `WIKI_QMD_MIN_SCORE`, `WIKI_QMD_TOP_N`, `WIKI_QMD_CANDIDATE_LIMIT`  | Tune retrieval quality and candidate breadth.                                       |

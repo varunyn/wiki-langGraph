@@ -111,7 +111,7 @@ Link and backlink **counts** are not stored as properties — they would duplica
 
 User-authored **`tags`** are preserved; legacy auto-tags under `wiki-langgraph/...` and legacy nested `wiki_langgraph:` blocks or old counter properties from older compiles are removed on the next run.
 
-`Index.md` adds `wiki_langgraph_kind: index` plus `wiki_langgraph_version` / `wiki_langgraph_compiled`, and `tags: generated` / `index`.
+`index.md` adds `wiki_langgraph_kind: index` plus `wiki_langgraph_version` / `wiki_langgraph_compiled`, and `tags: generated` / `index`.
 
 ## Tags
 
