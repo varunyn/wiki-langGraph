@@ -54,7 +54,7 @@ WIKI_OUTPUT_PROFILE=okf
 uv run wiki-langgraph run -v
 ```
 
-This reads notes recursively from `data/raw` and writes the generated OKF wiki to `data/wiki`. Each compiled concept note receives `type: Note` frontmatter, resolved internal links use standard Markdown syntax, and the root registry is written to `data/wiki/index.md`.
+This reads notes recursively from `data/raw` and writes the generated OKF wiki to `data/wiki`. Each compiled concept note receives `type: Note` frontmatter, resolved internal links use standard Markdown syntax with source-relative paths, and the root registry is written to `data/wiki/index.md` with `okf_version: "0.2"`. OKF-reserved `index.md` and `log.md` files are preserved and excluded from the concept registry.
 
 Open the generated `data/wiki/` directory in any Markdown-compatible tool, including Obsidian. The legacy Obsidian output remains available with `WIKI_OUTPUT_PROFILE=obsidian`.
 
@@ -159,7 +159,7 @@ All names are listed in **`.env.example`**. Below is what matters and when to se
 
 If unset, paths are derived from the package location (repo root when developing). If `WIKI_DATA_WIKI_DIR` is inside `WIKI_DATA_RAW_DIR`, the generated wiki folder is excluded from ingest and lint source enumeration so generated pages do not feed back as raw input.
 
-The compiler writes the generated root registry to OKF's reserved lowercase `index.md`. If a legacy generated `Index.md` exists, compile migrates the directory entry to lowercase before writing the new registry.
+The compiler writes the generated root registry to OKF's reserved lowercase `index.md` and declares `okf_version: "0.2"`. If a legacy generated `Index.md` exists, compile migrates the directory entry to lowercase before writing the new registry. Any `log.md` files are treated as OKF update logs rather than concept documents.
 
 ### OpenAI-compatible LLM (chat HTTP)
 

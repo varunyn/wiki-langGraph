@@ -118,8 +118,8 @@ def _frontmatter_kind(text: str) -> str | None:
 
 
 def _is_index_note(rel: str, text: str) -> bool:
-    """True when the note is the generated index or explicitly marked as an index note."""
-    if PurePosixPath(rel).name.lower() == "index.md":
+    """True when the note is reserved or explicitly marked as an index note."""
+    if PurePosixPath(rel).name.lower() in {"index.md", "log.md"}:
         return True
     return _frontmatter_kind(text) == INDEX_KIND_VALUE
 
@@ -374,7 +374,7 @@ def run_lint(
 
     expected_index_labels: set[str] = set()
     for rel in md_relpaths:
-        if PurePosixPath(rel).name.lower() == "index.md":
+        if PurePosixPath(rel).name.lower() in {"index.md", "log.md"}:
             continue
         expected_index_labels.add(wikilink_display_name(strip_redundant_wiki_prefix(wiki_root, rel)))
 

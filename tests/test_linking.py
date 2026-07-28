@@ -188,6 +188,40 @@ def test_compile_okf_profile_converts_body_wikilinks_to_markdown_links(tmp_path:
     assert "[[b|Bee]]" not in out
 
 
+def test_compile_okf_profile_uses_source_relative_links_for_nested_notes(tmp_path: Path) -> None:
+    """OKF Markdown links resolve from the compiled note's directory."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    (raw / "nested").mkdir(parents=True)
+    (raw / "nested" / "note.md").write_text("# Note\n\nSee [[target]].\n", encoding="utf-8")
+    (raw / "target.md").write_text("# Target\n", encoding="utf-8")
+
+    compile_linked_markdown(raw, wiki, ["nested/note.md", "target.md"])
+
+    out = (wiki / "nested" / "note.md").read_text(encoding="utf-8")
+    assert "[target](../target.md)" in out
+
+
+def test_compile_preserves_okf_reserved_log_files(tmp_path: Path) -> None:
+    """OKF log files are preserved as logs, not rewritten into concepts."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    (raw / "nested").mkdir(parents=True)
+    log = "# Directory Update Log\n\n## 2026-07-27\n* **Update**: Added a note.\n"
+    (raw / "log.md").write_text(log, encoding="utf-8")
+    (raw / "nested" / "log.md").write_text(log, encoding="utf-8")
+    (raw / "note.md").write_text(
+        "---\ntitle: Note\ndescription: A useful note.\n---\n\n# Note\n",
+        encoding="utf-8",
+    )
+
+    compile_linked_markdown(raw, wiki, ["log.md", "nested/log.md", "note.md"])
+
+    assert (wiki / "log.md").read_text(encoding="utf-8") == log
+    assert (wiki / "nested" / "log.md").read_text(encoding="utf-8") == log
+    assert [entry.label for entry in build_index_entries(raw, wiki, ["log.md", "nested/log.md", "note.md"])] == ["note"]
+
+
 def test_compile_okf_profile_uses_markdown_links_for_generated_graph_sections(tmp_path: Path) -> None:
     """OKF output uses standard markdown links for generated navigation."""
     raw = tmp_path / "raw"
@@ -287,10 +321,18 @@ def test_format_index_okf_profile_uses_standard_markdown_links() -> None:
         output_profile="okf",
     )
 
-    assert not text.startswith("---")
+    assert text.startswith('---\nokf_version: "0.2"\n---\n')
     assert "* [a](notes/a.md) - compiled wiki note" in text
     assert "[[a]]" not in text
     assert "created: `2026-01-01T00:00:00Z`" in text
+
+
+def test_format_index_okf_profile_uses_note_description() -> None:
+    entry = IndexNoteEntry(relpath="note.md", label="note", description="A useful note.")
+
+    out = format_index_markdown(["note.md"], entries=[entry], output_profile="okf")
+
+    assert "- A useful note." in out
 
 
 def test_build_index_entries_counts_semantic_blocks(tmp_path: Path) -> None:

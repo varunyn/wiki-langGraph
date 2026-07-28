@@ -186,13 +186,13 @@ flowchart TB
 
 ## `compile_linked_markdown` internals (`linking.py`)
 
-1. Load all `.md` bodies (or **content_overrides** from LLM step).
-2. **Pass 1 — semantic edges (if enabled):** for each `.md`, body hash vs **semantic_cache** → if miss, call **`suggest_semantic_related`** (LLM) or **`suggest_related_via_qmd`** (QMD).
+1. Load all `.md` bodies (or **content_overrides** from LLM step). OKF-reserved `index.md` and `log.md` files are preserved as reserved files, not treated as concepts.
+2. **Pass 1 — semantic edges (if enabled):** for each concept `.md`, body hash vs **semantic_cache** → if miss, call **`suggest_semantic_related`** (LLM) or **`suggest_related_via_qmd`** (QMD).
 3. Build **forward_explicit** from **`extract_wikilink_targets` only**; **backlinks_explicit** = inverse. Build **semantic_incoming** from `all_semantic` (reverse edges). Do **not** merge semantic stems into the forward graph used for Backlinks.
-4. **Pass 2 — write:** strip managed blocks, merge **`wiki_langgraph_*`** and OKF `type: Note`; convert resolved input wikilinks to standard Markdown links in OKF output; append **See also** + **Backlinks** (authored) + **Related (semantic)** (inbound suggestions), with dedupe so a neighbor is not listed twice on the same page when already in See also.
+4. **Pass 2 — write:** strip managed blocks, merge **`wiki_langgraph_*`** and OKF `type: Note`; convert resolved input wikilinks to standard Markdown links in OKF output using paths relative to the source note; append **See also** + **Backlinks** (authored) + **Related (semantic)** (inbound suggestions), with dedupe so a neighbor is not listed twice on the same page when already in See also.
 5. Return counts; caller prunes stale manifest entries, saves fresh hashes / semantic cache, and writes **index.md**.
 
-The default OKF profile writes the reserved lowercase `index.md`. On filesystems that preserve legacy `Index.md` casing, compile renames the old generated file through a temporary name first so the directory entry becomes canonical lowercase.
+The default OKF profile writes the reserved lowercase `index.md` with `okf_version: "0.2"`. On filesystems that preserve legacy `Index.md` casing, compile renames the old generated file through a temporary name first so the directory entry becomes canonical lowercase. Any `log.md` at any directory level is copied unchanged and is excluded from the concept index and graph.
 
 ---
 

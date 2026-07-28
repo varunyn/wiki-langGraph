@@ -117,7 +117,7 @@ def test_compile_default_profile_writes_markdown_link_index(tmp_path: Path) -> N
     text = (cfg.wiki_dir() / "index.md").read_text(encoding="utf-8")
 
     assert state.get("index_md_written") is True
-    assert not text.startswith("---")
+    assert text.startswith('---\nokf_version: "0.2"\n---\n')
     assert "* [note](note.md) - compiled wiki note" in text
     assert "[[note]]" not in text
 

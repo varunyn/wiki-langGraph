@@ -252,7 +252,11 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
             new_hashes,
             semantic_edges=pruned_semantic_edges if cfg.semantic_links else None,
         )
-    md_list = [rel for rel in md_only if rel not in queued_new_rels]
+    md_list = [
+        rel
+        for rel in md_only
+        if rel not in queued_new_rels and Path(rel).name.lower() not in {"index.md", "log.md"}
+    ]
     index_entries = build_index_entries(raw, wiki, compile_uris)
     _canonical_index_path(wiki).write_text(
         format_index_markdown(
