@@ -72,8 +72,14 @@ def build_graph(settings: Settings | None = None):
     return workflow.compile()
 
 
-def run_once(settings: Settings | None = None) -> WikiGraphState:
-    """Execute ingest → compile → index → lint once with empty initial state."""
+def run_once(
+    settings: Settings | None = None,
+    *,
+    llm_only: list[str] | None = None,
+    llm_limit: int | None = None,
+    lint_strict: bool | None = None,
+) -> WikiGraphState:
+    """Execute ingest → compile → index → lint once with optional LLM selection."""
     app = build_graph(settings=settings)
     initial: WikiGraphState = {
         "step_log": [],
@@ -81,4 +87,10 @@ def run_once(settings: Settings | None = None) -> WikiGraphState:
         "index_md_written": False,
         "last_error": None,
     }
+    if llm_only:
+        initial["llm_only"] = list(llm_only)
+    if llm_limit is not None:
+        initial["llm_limit"] = llm_limit
+    if lint_strict is not None:
+        initial["lint_strict"] = lint_strict
     return cast(WikiGraphState, asyncio.run(app.ainvoke(initial)))

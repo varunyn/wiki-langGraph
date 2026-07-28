@@ -81,6 +81,26 @@ def _outgoing_link_targets(markdown: str) -> set[str]:
 _WIKILINK_FULL = re.compile(
     r"(?<!\!)\[\[([^\]#|]+)(\|[^\]]*)?((?:#[^\]]*)?)\]\]",
 )
+_CODE_BLOCK_OR_SPAN = re.compile(
+    r"(?ms)(^[ ]{0,3}(?P<fence>`{3,}|~{3,})[^\n]*\n.*?^[ ]{0,3}(?P=fence)[ \t]*$|`+[^`\n]*`+)",
+)
+
+
+def _without_code(markdown: str) -> str:
+    """Remove fenced and inline code before interpreting Markdown link syntax."""
+    return _CODE_BLOCK_OR_SPAN.sub("", markdown)
+
+
+def _replace_outside_code(markdown: str, replacer) -> str:
+    """Apply a replacement only to prose, leaving code examples byte-for-byte intact."""
+    parts: list[str] = []
+    cursor = 0
+    for match in _CODE_BLOCK_OR_SPAN.finditer(markdown):
+        parts.append(replacer(markdown[cursor : match.start()]))
+        parts.append(match.group(0))
+        cursor = match.end()
+    parts.append(replacer(markdown[cursor:]))
+    return "".join(parts)
 
 
 def _wikilink_plain_text(target: str, pipe: str | None, hash_part: str | None) -> str:
@@ -266,7 +286,7 @@ def fix_unresolved_wikilinks(
                 return _wikilink_plain_text(target, pipe, hash_part)
             return m.group(0)
 
-        out = _WIKILINK_FULL.sub(repl, text)
+        out = _replace_outside_code(text, lambda part: _WIKILINK_FULL.sub(repl, part))
         return out, n_local
 
     for rel in md_relpaths:
@@ -324,7 +344,7 @@ def run_lint(
         text = contents.get(rel)
         if text is None:
             continue
-        targets = extract_wikilink_targets(text)
+        targets = extract_wikilink_targets(_without_code(text))
         for target in targets:
             resolved = resolve_wikilink_target(target, stem_to_paths, title_to_paths, all_md)
             if not resolved:
@@ -335,7 +355,7 @@ def run_lint(
                     f"from [[{target}]]",
                 )
         orphan_text = _orphan_check_text(raw_root, wiki_root, rel, text)
-        orphan_targets = _outgoing_link_targets(orphan_text)
+        orphan_targets = _outgoing_link_targets(_without_code(orphan_text))
         if not orphan_targets and not _is_index_note(rel, orphan_text):
             report.add(
                 "W_ORPHAN_NOTE",

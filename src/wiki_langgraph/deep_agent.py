@@ -59,9 +59,13 @@ def deep_agent_memory(settings: Settings) -> list[str]:
     return []
 
 
-def deep_agent_permissions() -> list[FilesystemPermission]:
+def deep_agent_permissions(
+    *,
+    read_only: bool = False,
+    read_paths: list[str] | None = None,
+) -> list[FilesystemPermission]:
     """Path-level safeguards for the built-in Deep Agents filesystem tools."""
-    return [
+    permissions = [
         FilesystemPermission(
             operations=["read", "write"],
             paths=["/.env", "/.env.*", "/.git/**", "/.codegraph/**"],
@@ -73,6 +77,30 @@ def deep_agent_permissions() -> list[FilesystemPermission]:
             mode="deny",
         ),
     ]
+    if read_only:
+        if read_paths:
+            permissions.extend(
+                [
+                    FilesystemPermission(
+                        operations=["read"],
+                        paths=read_paths,
+                        mode="allow",
+                    ),
+                    FilesystemPermission(
+                        operations=["read"],
+                        paths=["/**"],
+                        mode="deny",
+                    ),
+                ]
+            )
+        permissions.append(
+            FilesystemPermission(
+                operations=["write"],
+                paths=["/**"],
+                mode="deny",
+            )
+        )
+    return permissions
 
 
 def create_wiki_deep_agent(
@@ -80,6 +108,8 @@ def create_wiki_deep_agent(
     *,
     model: BaseChatModel | str | None = None,
     system_prompt: str | None = None,
+    read_only: bool = False,
+    read_paths: list[str] | None = None,
 ) -> CompiledStateGraph:
     """Create a Deep Agent with ``/skills/`` wired to Obsidian OFM (progressive disclosure).
 
@@ -91,6 +121,8 @@ def create_wiki_deep_agent(
         model: Chat model or ``provider:model`` string. Defaults to
             :func:`chat_model_from_settings`.
         system_prompt: Extra instructions prepended to the base deep-agent prompt.
+        read_only: Deny filesystem writes, for review-only invocations.
+        read_paths: Optional allowlist for read-only invocations.
 
     Returns:
         A compiled LangGraph agent ready to ``invoke`` / ``astream``.
@@ -103,6 +135,6 @@ def create_wiki_deep_agent(
         backend=backend,
         skills=["/skills/"],
         memory=deep_agent_memory(cfg),
-        permissions=deep_agent_permissions(),
+        permissions=deep_agent_permissions(read_only=read_only, read_paths=read_paths),
         system_prompt=system_prompt,
     )

@@ -119,6 +119,23 @@ def test_compile_content_overrides_replace_raw(tmp_path: Path) -> None:
     assert "IGNORED" not in out
 
 
+def test_compile_skips_non_markdown_files(tmp_path: Path) -> None:
+    """Raw assets stay in the raw tree instead of being copied into the wiki."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    (raw / "note.md").write_text("# Note\n", encoding="utf-8")
+    (raw / "image.png").write_bytes(b"png")
+
+    md_n, other, sem = compile_linked_markdown(raw, wiki, ["note.md", "image.png"])
+
+    assert md_n == 1
+    assert other == 0
+    assert sem == 0
+    assert (wiki / "note.md").is_file()
+    assert not (wiki / "image.png").exists()
+
+
 def test_compile_backlinks_round_trip(tmp_path: Path) -> None:
     """b.md should list a.md when a links to [[b]]."""
     raw = tmp_path / "raw"

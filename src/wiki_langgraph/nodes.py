@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from wiki_langgraph.config import Settings, load_settings
@@ -30,6 +31,26 @@ from wiki_langgraph.state import WikiGraphState
 
 logger = logging.getLogger("wiki_langgraph.nodes")
 INDEX_FILENAME = "index.md"
+
+
+def select_llm_compile_relpaths(
+    relpaths: list[str],
+    *,
+    only: list[str] | None = None,
+    limit: int | None = None,
+) -> list[str]:
+    """Select LLM authoring inputs without shrinking the deterministic corpus."""
+    selected = sorted(relpaths)
+    patterns = [pattern for pattern in (only or []) if pattern]
+    if patterns:
+        selected = [
+            rel
+            for rel in selected
+            if any(fnmatchcase(rel, pattern) for pattern in patterns)
+        ]
+    if limit is not None:
+        selected = selected[:limit]
+    return selected
 
 
 def _raw_file_relpaths(raw: Path, *, exclude_dir: Path | None = None) -> list[str]:
@@ -128,6 +149,7 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
     queued_review_rels: set[str] = set()
     queued_new_rels: set[str] = set()
     queued_review_count = 0
+    hash_relpaths = md_only
     if cfg.llm_compile:
         manifest_for_run = load_manifest(manifest_path)
         changed = changed_md_relpaths(
@@ -135,6 +157,16 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
             md_only,
             manifest_for_run,
             incremental=cfg.llm_compile_incremental,
+        )
+        changed = select_llm_compile_relpaths(
+            changed,
+            only=list(state.get("llm_only") or []),
+            limit=state.get("llm_limit"),
+        )
+        hash_relpaths = (
+            md_only
+            if not state.get("llm_only") and state.get("llm_limit") is None
+            else changed
         )
         workers = max(1, min(cfg.llm_compile_max_workers, len(changed)))
         logger.info(
@@ -233,7 +265,7 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
         if queued_review_rels:
             existing_hashes = dict(manifest_for_run.get("hashes") or {})
             new_hashes = {rel: digest for rel, digest in existing_hashes.items() if rel in md_only}
-            for rel in md_only:
+            for rel in hash_relpaths:
                 if rel in queued_review_rels:
                     continue
                 p = raw / rel
@@ -243,7 +275,7 @@ def node_compile_wiki(state: WikiGraphState, *, settings: Settings | None = None
                     except OSError as exc:
                         logger.debug("manifest skip %s: %s", rel, exc)
         else:
-            new_hashes = update_hashes_for_relpaths(raw, md_only, manifest_for_run)
+            new_hashes = update_hashes_for_relpaths(raw, hash_relpaths, manifest_for_run)
         pruned_semantic_edges = prune_semantic_edges(manifest_for_run, md_only)
         if cfg.semantic_links:
             pruned_semantic_edges.update(prune_semantic_edges({"semantic_edges": semantic_cache}, md_only))
@@ -308,12 +340,18 @@ def node_index(_state: object, *, settings: Settings | None = None) -> dict[str,
 
 
 def node_lint(_state: object, *, settings: Settings | None = None) -> dict[str, object]:
-    """Run vault lint after compile/index; fail the run if any issues are reported."""
+    """Run vault lint after compile/index; optionally treat warnings as non-blocking."""
     cfg = settings or load_settings()
     if not cfg.lint_on_run:
         msg = "lint: skipped (WIKI_LINT_ON_RUN=false)"
         logger.info(msg)
-        return {"step_log": [msg], "last_error": None}
+        return {
+            "step_log": [msg],
+            "last_error": None,
+            "lint_issue_count": 0,
+            "lint_warning_count": 0,
+            "lint_error_count": 0,
+        }
 
     raw = cfg.raw_dir()
     wiki = cfg.wiki_dir()
@@ -323,13 +361,37 @@ def node_lint(_state: object, *, settings: Settings | None = None) -> dict[str, 
     if n == 0:
         ok_msg = "lint: ok (0 issues)"
         logger.info(ok_msg)
-        return {"step_log": [ok_msg], "last_error": None}
+        return {
+            "step_log": [ok_msg],
+            "last_error": None,
+            "lint_issue_count": 0,
+            "lint_warning_count": 0,
+            "lint_error_count": 0,
+        }
 
     lines: list[str] = [f"lint: failed — {n} issue(s)"]
     for issue in report.issues:
         loc = f"{issue.path}: " if issue.path else ""
         detail = f" ({issue.detail})" if issue.detail else ""
         lines.append(f"{issue.code} {loc}{issue.message}{detail}")
+    issue_count = report.error_count + report.warn_count
+    strict = not isinstance(_state, dict) or _state.get("lint_strict", True)
+    if report.error_count == 0 and not strict:
+        lines[0] = f"lint: passed with {report.warn_count} warning(s)"
+        logger.warning(lines[0])
+        return {
+            "step_log": lines,
+            "last_error": None,
+            "lint_issue_count": issue_count,
+            "lint_warning_count": report.warn_count,
+            "lint_error_count": report.error_count,
+        }
     err = f"lint failed with {n} issue(s)"
     logger.error(err)
-    return {"step_log": lines, "last_error": err}
+    return {
+        "step_log": lines,
+        "last_error": err,
+        "lint_issue_count": issue_count,
+        "lint_warning_count": report.warn_count,
+        "lint_error_count": report.error_count,
+    }

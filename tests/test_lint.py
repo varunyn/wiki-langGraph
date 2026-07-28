@@ -19,6 +19,50 @@ def test_lint_unresolved_wikilink(tmp_path: Path) -> None:
     assert "W_UNRESOLVED_WIKILINK" in codes
 
 
+def test_lint_ignores_wikilink_syntax_in_code_examples(tmp_path: Path) -> None:
+    """Code examples may contain shell brackets and documentation wikilinks."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "example.md").write_text(
+        "# Example\n\nUse `[[inline example]]`.\n\n```bash\nif [[ ! -f \"$FILE\" ]]; then\n  echo [[wikilinks]]\nfi\n```\n",
+        encoding="utf-8",
+    )
+
+    report = run_lint(raw, wiki, ["example.md"])
+
+    assert not any(issue.code == "W_UNRESOLVED_WIKILINK" for issue in report.issues)
+
+
+def test_lint_resolves_note_names_with_numeric_dots(tmp_path: Path) -> None:
+    """Periods inside a note name are not a file-extension separator."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    (raw / "11.01 Cursor Skills.md").write_text("# Skills\n", encoding="utf-8")
+    (raw / "home.md").write_text("# Home\n\n[[11.01 Cursor Skills]]\n", encoding="utf-8")
+
+    report = run_lint(raw, wiki, ["11.01 Cursor Skills.md", "home.md"])
+
+    assert not any(issue.code == "W_UNRESOLVED_WIKILINK" for issue in report.issues)
+
+
+def test_fix_ignores_wikilink_syntax_in_code_examples(tmp_path: Path) -> None:
+    """Auto-fix must not rewrite code samples that resemble wikilinks."""
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    original = "# Example\n\n```bash\necho [[missing]]\n```\n"
+    (raw / "example.md").write_text(original, encoding="utf-8")
+
+    fix_unresolved_wikilinks(raw, wiki, ["example.md"], mode="strip")
+
+    assert (raw / "example.md").read_text(encoding="utf-8") == original
+
+
 def test_lint_index_missing_entry(tmp_path: Path) -> None:
     """When index.md exists but omits a catalog label, report drift."""
     raw = tmp_path / "raw"

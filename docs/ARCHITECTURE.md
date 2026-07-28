@@ -119,7 +119,7 @@ flowchart TB
 | **Manifest** | `manifest.py` | JSON at `resolved_manifest_path()` (default `data/.wiki-langgraph/manifest.json`): per-file content hashes for incremental **LLM compile**; **`semantic_edges`** cache (hash + list of related relpaths) when **semantic links** are on. Before save, deleted-note hash entries and semantic cache entries are pruned so stale relpaths do not accumulate. |
 | **LLM authoring** | `llm_author.py` | Only if `WIKI_LLM_COMPILE=true`: rewrites selected raw `.md` → wiki-shaped markdown; injects `compiled_from:`; optional **enrich** from existing wiki. **Not** parallelized with semantic pass; `WIKI_LLM_COMPILE_MAX_WORKERS` only affects this step. |
 | **LLM review queue** | `review_queue.py` + `cli.py` | `WIKI_LLM_COMPILE_REVIEW=off\|risky\|all`. `risky` queues suspicious candidates and existing-note overwrites under `data/.wiki-langgraph/candidates/`; queued notes do not refresh manifest hashes, so they are retried until approved or rejected. CLI commands: `review list`, `review show`, `review approve`, `review reject`. |
-| **Linking** | `linking.py` → `compile_linked_markdown` | Copy/process all files; **Pass 1** semantic suggestions; **explicit-only** forward graph for Backlinks; **Related (semantic)** footer for inbound suggestions; **Pass 2** write; **`frontmatter_graph`** merge (`wiki_langgraph_*` plus OKF `type: Note`); render compiled/generated links as standard Markdown links in the default OKF profile. |
+| **Linking** | `linking.py` → `compile_linked_markdown` | Process raw markdown into the wiki; leave non-markdown raw assets in place; **Pass 1** semantic suggestions; **explicit-only** forward graph for Backlinks; **Related (semantic)** footer for inbound suggestions; **Pass 2** write; **`frontmatter_graph`** merge (`wiki_langgraph_*` plus OKF `type: Note`); render compiled/generated links as standard Markdown links in the default OKF profile. |
 | **Lint** | `lint.py` | **Batch:** `node_lint` after **index** (default). **Ad-hoc:** `wiki-langgraph lint` — same `run_lint` rules (unresolved wikilinks, `W_ORPHAN_NOTE`, `W_INDEX_DRIFT`, `W_STALE_WIKI`, `W_OKF_MISSING_TYPE` when OKF checks are enabled, `E_READ`, etc.). |
 
 ---
@@ -198,9 +198,38 @@ The default OKF profile writes the reserved lowercase `index.md` with `okf_versi
 
 ## CLI
 
+### Bounded agent controller
+
+`wiki-langgraph agent` is a deliberately bounded control loop around the existing graph:
+
+```mermaid
+flowchart LR
+  I[inspect raw files, manifest, review queue] --> P[deterministic plan]
+  P -->|--dry-run| O[report plan]
+  P -->|execute, at most N times| A[run graph]
+  A --> V[verify graph state and lint result]
+  V --> R[replan from fresh inspection]
+  R -->|safe next action| P
+  R -->|no safe action| O[report outcome]
+```
+
+The controller does not ask an LLM to invent shell commands or retry indefinitely. `--max-iterations`
+sets the hard iteration bound (two by default). `--only` and
+`--limit` constrain LLM authoring, while deterministic compilation still processes the complete raw
+corpus. Agent verification reports warnings but fails on lint errors. Normal `run` behavior remains
+strict for backward compatibility. Use `wiki-langgraph agent --dry-run` to inspect the proposed action
+before allowing writes or AI calls.
+
+`--deep-review` is the explicit DeepAgent boundary. It reads up to three queued review candidates,
+is read-scoped to those candidate directories plus skills/memory, returns recommendations for a
+human, and is denied filesystem writes. It does not run for ordinary agent invocations and does not
+approve or reject candidates.
+
 | Command | Flow |
 |---------|------|
 | `wiki-langgraph run` | `graph.run_once` → ingest → compile_wiki → index → **lint** (unless `WIKI_LINT_ON_RUN=false`). On lint failure, stderr shows `last_error` + step log; exit **1**. |
+| `wiki-langgraph agent` | Inspect → plan → run → verify → replan, bounded by `--max-iterations`. `--dry-run` stops after inspection; `--only`/`--limit` bound optional LLM authoring. |
+| `wiki-langgraph agent --deep-review` | Read-only DeepAgent review of queued candidates; human approval is still required. |
 | `wiki-langgraph query "..." [--save]` | Local lexical retrieval over compiled wiki notes → `ChatOpenAI` answer. `--save` writes a raw note under `Queries/` with source wikilinks; the next `run` compiles it into the wiki. |
 | `wiki-langgraph research "..." [--save]` | Same retrieval layer as `query`, with a larger default context window and a structured research-brief prompt. `--save` writes a raw note under `Research/` with source wikilinks; the next `run` compiles it into the wiki. |
 | `wiki-langgraph review list/show/approve/reject` | Inspect or resolve pending LLM compile candidates from `data/.wiki-langgraph/candidates/`. Approve writes the candidate markdown to the wiki target and updates the raw hash in the manifest. |

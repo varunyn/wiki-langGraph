@@ -58,10 +58,23 @@ This reads notes recursively from `data/raw` and writes the generated OKF wiki t
 
 Open the generated `data/wiki/` directory in any Markdown-compatible tool, including Obsidian. The legacy Obsidian output remains available with `WIKI_OUTPUT_PROFILE=obsidian`.
 
+`run --plan` is a no-write check for expensive work. `--only` accepts shell-style path globs (repeat it for multiple patterns), and `--limit` caps LLM authoring for that run. These controls intentionally limit only AI authoring; the deterministic compiler still uses the complete raw corpus so link resolution and `index.md` remain complete. With `WIKI_LLM_COMPILE=false`, they report or select no LLM calls.
+
+For a bounded agentic step, use `agent --dry-run` to inspect the workspace and proposed action. Running
+`agent` uses a bounded inspect → plan → act → verify → replan loop (two iterations by default).
+Warnings are reported without blocking the agent, while lint errors still fail it. When no safe
+automatic next action exists, it stops for review rather than retrying indefinitely. Use
+`--max-iterations N` to change the bound.
+
 ## Run
 
 ```bash
 uv run wiki-langgraph run -v
+uv run wiki-langgraph run --plan
+uv run wiki-langgraph run --plan --only '20-29 Writing/**/*.md' --limit 5
+uv run wiki-langgraph agent --dry-run
+uv run wiki-langgraph agent --only '20-29 Writing/**/*.md' --limit 5
+uv run wiki-langgraph agent --deep-review
 uv run wiki-langgraph query "How should I debug RAG failures?"
 uv run wiki-langgraph query "How should I debug RAG failures?" --save
 uv run wiki-langgraph research "Compare RAG failures and evaluation loops" --save
@@ -75,6 +88,11 @@ uv run wiki-langgraph version
 | Command | Purpose |
 | --- | --- |
 | `wiki-langgraph run -v` | Run ingest → compile → optional QMD refresh → lint. |
+| `wiki-langgraph run --plan` | Show corpus size and estimated LLM work without writing files or calling APIs. |
+| `wiki-langgraph run --only 'pattern' --limit N` | Limit LLM authoring to matching raw paths and at most `N` files; deterministic compilation still sees the full corpus. |
+| `wiki-langgraph agent --dry-run` | Inspect → plan without writing files or calling APIs. |
+| `wiki-langgraph agent [--only 'pattern'] [--limit N]` | Execute the bounded inspect → plan → graph → verify → replan cycle. |
+| `wiki-langgraph agent --deep-review` | Explicitly invoke a path-scoped, read-only DeepAgent review for queued candidates; approval remains manual. |
 | `wiki-langgraph query "..."` | Answer a question using retrieved compiled wiki notes. |
 | `wiki-langgraph query "..." --save` | Save the answer as a raw note under `Queries/` so future runs can compile it. |
 | `wiki-langgraph research "..."` | Synthesize a structured research brief from broader retrieved wiki context. |

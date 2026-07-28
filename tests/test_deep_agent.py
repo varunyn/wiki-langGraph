@@ -103,3 +103,18 @@ def test_create_wiki_deep_agent_passes_expected_factory_kwargs(tmp_path: Path) -
     ]
     assert type(captured["backend"]).__name__ == "CompositeBackend"
     assert type(captured["model"]).__name__ == "ChatOpenAI"
+
+
+def test_create_wiki_deep_agent_read_only_adds_write_deny_rule(tmp_path: Path) -> None:
+    """Review agents receive an explicit filesystem write deny rule."""
+    captured: dict[str, object] = {}
+
+    def fake_create_deep_agent(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    cfg = Settings(project_root=tmp_path, openai_api_base="http://127.0.0.1:11434/v1")
+    with patch("wiki_langgraph.deep_agent.create_deep_agent", fake_create_deep_agent):
+        create_wiki_deep_agent(settings=cfg, read_only=True)
+
+    assert len(captured["permissions"]) == 3

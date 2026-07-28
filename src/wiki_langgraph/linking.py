@@ -287,7 +287,9 @@ def resolve_wikilink_target(
         hits = [p for p in all_md if p.lower().endswith(suffix + ".md") or p.lower() == suffix + ".md"]
         return sorted(hits)
 
-    key = PurePosixPath(t_clean).stem.lower()
+    # Do not use ``PurePosixPath.stem`` here: note names such as
+    # ``11.01 Cursor Skills`` contain periods but do not have an extension.
+    key = PurePosixPath(t_clean).name.lower()
     paths = list(stem_to_paths.get(key, []))
     if not paths:
         paths = list(title_to_paths.get(t.lower(), []))
@@ -493,11 +495,13 @@ def compile_linked_markdown(
     content_overrides: dict[str, str] | None = None,
     semantic_cache: dict[str, dict[str, object]] | None = None,
 ) -> tuple[int, int, int]:
-    """Copy/process markdown from ``raw_root`` into ``wiki_root`` and append graph footer.
+    """Process markdown from ``raw_root`` into ``wiki_root`` and append graph footer.
 
-    Non-``.md`` files are copied verbatim.  Non-``.md`` files and ``.md`` files whose
-    final output is byte-identical to the on-disk wiki note are **skipped** (no write, no
-    mtime update) so downstream tools don't see spurious changes.
+    Only markdown files are written to the compiled wiki.  Raw assets and other
+    non-markdown files remain in the raw tree and are not copied into the wiki.
+    Markdown files whose final output is byte-identical to the on-disk wiki note are
+    **skipped** (no write, no mtime update) so downstream tools don't see spurious
+    changes.
 
     When ``content_overrides`` is set, keys are posix rel paths; those ``.md`` bodies are taken
     as given (e.g. LLM-authored) instead of reading from ``raw_root`` — used for incremental
@@ -611,17 +615,20 @@ def compile_linked_markdown(
         okf_type = "Note"
 
     for rel in rel_uris:
-        raw_path = raw_root / rel
+        if not rel.lower().endswith(".md"):
+            continue
+
         out_rel = strip_redundant_wiki_prefix(wiki_root, rel)
         wiki_path = wiki_root / out_rel
         wiki_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if not rel.lower().endswith(".md"):
-            new_bytes = raw_path.read_bytes()
-            if wiki_path.is_file() and wiki_path.read_bytes() == new_bytes:
-                continue
-            wiki_path.write_bytes(new_bytes)
-            other_copied += 1
+        if _is_okf_reserved_rel(out_rel):
+            reserved_bytes = contents[rel].encode("utf-8")
+            if not wiki_path.is_file() or wiki_path.read_bytes() != reserved_bytes:
+                wiki_path.write_bytes(reserved_bytes)
+                md_written += 1
+            else:
+                md_skipped += 1
             continue
 
         base = _strip_generated_blocks(contents[rel])

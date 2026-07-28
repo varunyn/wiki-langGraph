@@ -9,7 +9,7 @@ from wiki_langgraph import graph as graph_module
 from wiki_langgraph.config import Settings
 from wiki_langgraph.graph import build_graph, run_once
 from wiki_langgraph.manifest import file_sha256, load_manifest, save_manifest
-from wiki_langgraph.nodes import node_ingest
+from wiki_langgraph.nodes import node_ingest, node_lint, select_llm_compile_relpaths
 
 
 def _isolated_settings(tmp_path: Path) -> Settings:
@@ -78,6 +78,63 @@ def test_run_once_returns_step_log(tmp_path: Path) -> None:
     cfg = _isolated_settings(tmp_path)
     state = run_once(settings=cfg)
     assert isinstance(state.get("step_log"), list)
+
+
+def test_node_lint_agent_mode_allows_warnings(tmp_path: Path) -> None:
+    """The bounded agent can verify successfully while reporting warning-only lint findings."""
+    cfg = _isolated_settings(tmp_path)
+    (cfg.raw_dir() / "solo.md").write_text("# Solo\n\nNo links.\n", encoding="utf-8")
+
+    result = node_lint({"lint_strict": False}, settings=cfg)
+
+    assert result["last_error"] is None
+    assert result["lint_warning_count"] >= 1
+
+
+def test_node_lint_default_mode_keeps_warnings_blocking(tmp_path: Path) -> None:
+    """Normal graph runs keep the existing strict warning behavior."""
+    cfg = _isolated_settings(tmp_path)
+    (cfg.raw_dir() / "solo.md").write_text("# Solo\n\nNo links.\n", encoding="utf-8")
+
+    result = node_lint({"lint_strict": True}, settings=cfg)
+
+    assert str(result["last_error"]).startswith("lint failed with ")
+    assert result["lint_warning_count"] >= 1
+
+
+def test_select_llm_compile_relpaths_filters_and_limits() -> None:
+    assert select_llm_compile_relpaths(
+        ["notes/a.md", "notes/b.md", "other.md"],
+        only=["notes/*.md"],
+        limit=1,
+    ) == ["notes/a.md"]
+
+
+def test_run_once_limits_llm_authoring_without_marking_unselected_hashes_done(tmp_path: Path) -> None:
+    cfg = _isolated_settings(tmp_path)
+    cfg = Settings(
+        project_root=tmp_path,
+        data_raw_dir=cfg.raw_dir(),
+        data_wiki_dir=cfg.wiki_dir(),
+        llm_compile=True,
+        openai_api_base="http://127.0.0.1:1/v1",
+        semantic_links=False,
+        lint_on_run=False,
+    )
+    (cfg.raw_dir() / "a.md").write_text("# A\n", encoding="utf-8")
+    (cfg.raw_dir() / "b.md").write_text("# B\n", encoding="utf-8")
+    authored: list[str] = []
+
+    def fake_author(raw_text: str, source_rel: str, **_: object) -> str:
+        authored.append(source_rel)
+        return raw_text
+
+    with patch("wiki_langgraph.nodes.author_raw_to_wiki_markdown", side_effect=fake_author):
+        run_once(settings=cfg, llm_only=["a.md"])
+
+    assert authored == ["a.md"]
+    manifest = load_manifest(cfg.resolved_manifest_path())
+    assert set(manifest["hashes"]) == {"a.md"}
 
 
 def test_compile_overwrites_lowercase_index_each_run(tmp_path: Path) -> None:
