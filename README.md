@@ -268,7 +268,7 @@ This separation prevents machine-suggested relatedness from being mistaken for h
 
 `deep_agent.create_wiki_deep_agent` is available for agent workflows outside the batch compile. It uses the configured chat model, a filesystem backend rooted at the project, bundled/project skills under `/skills/`, `AGENTS.md` memory when present, and filesystem permissions that deny access to `.env`, `.git`, `.codegraph`, and internal agent artifact paths.
 
-The main CLI query and research paths currently use direct LangChain flows for predictability. Deep Agents are best suited for future multi-step agentic research, candidate review assistance, and concept-page synthesis.
+The main CLI query and research paths currently use direct LangChain flows for predictability. Deep Agents are available through the explicit `agent --deep-review` path for read-only candidate review; they are not part of normal batch compilation.
 
 ## Layout
 

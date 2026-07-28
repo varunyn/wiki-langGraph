@@ -178,7 +178,7 @@ flowchart TB
 | **Authoring** | `llm_author.py` | `WIKI_LLM_COMPILE`: raw → wiki markdown per changed file (incremental via manifest). |
 | **Semantic links** | `linking_llm.py` | `WIKI_SEMANTIC_LINKS` and `WIKI_SEMANTIC_BACKEND=llm`: related-note suggestions in `compile_linked_markdown` pass 1. |
 | **Query / research** | `query.py` | `wiki-langgraph query` and `wiki-langgraph research`: lexical retrieval over compiled wiki notes, then direct `ChatOpenAI` answer or research brief. |
-| **Deep agent** | `deep_agent.py` | User invokes agent; not part of `wiki run` unless you call it from code. |
+| **Deep agent** | `deep_agent.py` + `deep_review.py` | Opt-in via `wiki-langgraph agent --deep-review`; reviews queued candidates read-only and is not part of normal `wiki run` or `agent` execution. |
 
 **Obsidian OFM system text** for prompts: `obsidian_prompt.wiki_llm_system_instructions` / `load_obsidian_markdown_skill_text` (skill path: `WIKI_OBSIDIAN_MARKDOWN_SKILL_PATH` or project/bundled `skills/obsidian-markdown/SKILL.md`).
 
