@@ -19,3 +19,11 @@ uv run wiki-langgraph eval
 The command runs the hosted items through `wiki.research`, creates a linked dataset run, sends traces and deterministic scores to Langfuse, and prints the experiment result. It is intentionally single-concurrency for the first baseline.
 
 The command fetches `wiki-langgraph-research-v1` from Langfuse and creates a dataset run. Use `--local` only when testing the JSON fixture without relying on the hosted dataset.
+
+Bounded agent evaluations use isolated fixtures:
+
+```bash
+uv run wiki-langgraph agent-eval
+```
+
+They exercise the real inspect → plan → LangGraph → verify → replan path and score plan correctness, verification, safe stopping, and iteration bounds.

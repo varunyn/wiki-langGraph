@@ -20,7 +20,7 @@ from wiki_langgraph.agentic import (
 )
 from wiki_langgraph.config import Settings, load_settings
 from wiki_langgraph.deep_review import review_candidates
-from wiki_langgraph.evaluation import run_research_experiment
+from wiki_langgraph.evaluation import run_agent_experiment, run_research_experiment
 from wiki_langgraph.graph import run_once
 from wiki_langgraph.lint import fix_unresolved_wikilinks, run_lint
 from wiki_langgraph.logging_config import configure_logging
@@ -292,6 +292,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Project root containing the raw and compiled corpus (default: current directory)",
     )
 
+    agent_eval_p = sub.add_parser("agent-eval", help="Run bounded agent fixture evaluations through Langfuse")
+    agent_eval_p.add_argument(
+        "--dataset",
+        type=Path,
+        default=Path("evals/agent_dataset.json"),
+        help="Agent evaluation dataset JSON path (default: evals/agent_dataset.json)",
+    )
+    agent_eval_p.add_argument("--name", default=None, help="Override the Langfuse experiment name")
+    agent_eval_p.add_argument("--max-concurrency", type=int, default=1)
+    agent_eval_p.add_argument("--corpus-root", type=Path, default=Path("."))
+
     review_p = sub.add_parser("review", help="Inspect and resolve LLM compile review candidates")
     review_sub = review_p.add_subparsers(dest="review_command", required=True)
     review_sub.add_parser("list", help="List pending LLM compile candidates")
@@ -489,6 +500,32 @@ def main(argv: list[str] | None = None) -> int:
             )
         except (RuntimeError, ValueError) as exc:
             print(f"eval failed: {exc}", file=sys.stderr)
+            return 1
+        formatter = getattr(result, "format", None)
+        print(formatter() if callable(formatter) else result)
+        return 0
+
+    if args.command == "agent-eval":
+        if args.max_concurrency < 1:
+            parser.error("agent-eval --max-concurrency must be at least 1")
+        corpus_root = args.corpus_root.resolve()
+        settings = load_settings().model_copy(
+            update={
+                "project_root": corpus_root,
+                "data_raw_dir": corpus_root / "data/raw",
+                "data_wiki_dir": corpus_root / "data/wiki",
+            }
+        )
+        configure_logging(settings)
+        try:
+            result = run_agent_experiment(
+                settings=settings,
+                dataset_path=args.dataset,
+                name=args.name,
+                max_concurrency=args.max_concurrency,
+            )
+        except (RuntimeError, ValueError) as exc:
+            print(f"agent-eval failed: {exc}", file=sys.stderr)
             return 1
         formatter = getattr(result, "format", None)
         print(formatter() if callable(formatter) else result)

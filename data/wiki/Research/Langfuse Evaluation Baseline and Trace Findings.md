@@ -13,8 +13,8 @@ tags:
 - traces
 type: Note
 wiki_langgraph_version: 1
-wiki_langgraph_compiled: '2026-07-30T23:38:30Z'
-modified: '2026-07-30T23:38:30Z'
+wiki_langgraph_compiled: '2026-07-30T23:54:58Z'
+modified: '2026-07-30T23:54:58Z'
 created: '2026-07-30T23:38:30Z'
 ---
 # Langfuse Evaluation Baseline and Trace Findings
@@ -81,3 +81,12 @@ Research questions do not invoke an agent. The current flow is lexical wiki retr
 - [Research/Research Brief - Session Notes to Langfuse Evals](Research%20Brief%20-%20Session%20Notes%20to%20Langfuse%20Evals.md)
 - [Research/Operational Lessons for Session Notes](Operational%20Lessons%20for%20Session%20Notes.md)
 - [Research/Bounded Agentic Workflow Architecture](Bounded%20Agentic%20Workflow%20Architecture.md)
+<!-- wiki-langgraph backlinks -->
+## Backlinks
+
+Notes that link here (authored ``[[wikilinks]]``):
+
+- [Research/Agent Evaluation Fixtures and Findings](Agent%20Evaluation%20Fixtures%20and%20Findings.md)
+- [Sessions/2026-07-30 Langfuse Agent Evaluation Session](../Sessions/2026-07-30%20Langfuse%20Agent%20Evaluation%20Session.md)
+
+<!-- /wiki-langgraph backlinks -->

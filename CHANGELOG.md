@@ -14,3 +14,4 @@
 ## 2026-07-30
 
 - Added the first versioned research evaluation dataset with five structured session-note cases and expected themes/gaps for Langfuse experiments.
+- Added a bounded-agent evaluation dataset with isolated clean, warning-review, and safe-stop fixtures.

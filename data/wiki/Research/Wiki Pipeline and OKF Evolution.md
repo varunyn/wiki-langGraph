@@ -12,8 +12,8 @@ tags:
 - compiler
 type: Note
 wiki_langgraph_version: 1
-wiki_langgraph_compiled: '2026-07-30T23:38:30Z'
-modified: '2026-07-30T23:38:30Z'
+wiki_langgraph_compiled: '2026-07-30T23:54:58Z'
+modified: '2026-07-30T23:54:58Z'
 created: '2026-07-30T23:06:51Z'
 ---
 # Wiki Pipeline and OKF Evolution
@@ -64,8 +64,8 @@ The repository is a deterministic markdown-to-wiki compiler with optional AI enr
 
 Notes that link here (authored ``[[wikilinks]]``):
 
+- [Research/Agent Evaluation Fixtures and Findings](Agent%20Evaluation%20Fixtures%20and%20Findings.md)
 - [Research/Bounded Agentic Workflow Architecture](Bounded%20Agentic%20Workflow%20Architecture.md)
-- [Research/How should this application turn structured session notes into a meaningful Lang](How%20should%20this%20application%20turn%20structured%20session%20notes%20into%20a%20meaningful%20Lang.md)
 - [Research/Langfuse Tracing and Evaluation Direction](Langfuse%20Tracing%20and%20Evaluation%20Direction.md)
 - [Research/Operational Lessons for Session Notes](Operational%20Lessons%20for%20Session%20Notes.md)
 - [Research/Research Brief - Session Notes to Langfuse Evals](Research%20Brief%20-%20Session%20Notes%20to%20Langfuse%20Evals.md)

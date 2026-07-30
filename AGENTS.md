@@ -116,6 +116,8 @@ uv run pytest -k orphan
 ### Session research notes
 
 - After meaningful work on this application, add or update a structured session-research note under `data/raw/Research/`.
+- For concrete chronological work logs, add a raw session note under `data/raw/Sessions/`.
+- Keep app-generated research briefs and experiment reports out of `data/raw/`; store them under `data/research-runs/` or inspect them directly from Langfuse.
 - Capture the purpose, decisions, implementation changes, evidence, verification, open questions, and follow-ups; preserve source session IDs when available.
 - Treat these notes as curated research data, not raw transcripts. Never copy secrets, API keys, bearer tokens, or raw environment values into them.
 - Link related research notes so the corpus participates in the wiki graph.

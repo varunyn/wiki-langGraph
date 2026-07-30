@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Mapping
 from pathlib import Path
+from shutil import copytree
+from tempfile import TemporaryDirectory
 from typing import Callable
 
 from langfuse import Evaluation
 
+from wiki_langgraph.agentic import inspect_workspace, make_plan, replan_after_verification
 from wiki_langgraph.config import Settings
+from wiki_langgraph.graph import run_once
 from wiki_langgraph.observability import langfuse_client
 from wiki_langgraph.query import research_query
 
@@ -74,14 +79,20 @@ def load_evaluation_dataset(path: Path) -> dict[str, object]:
         expected = item.get("expectedOutput")
         if not isinstance(item_id, str) or not item_id.strip() or item_id in ids:
             raise ValueError(f"dataset item IDs must be unique and non-empty: {item_id!r}")
-        if not isinstance(item_input, dict) or not isinstance(item_input.get("question"), str):
-            raise ValueError(f"dataset item {item_id} requires input.question")
+        if not isinstance(item_input, dict) or not any(
+            isinstance(item_input.get(field), str) for field in ("question", "scenario")
+        ):
+            raise ValueError(f"dataset item {item_id} requires input.question or input.scenario")
         if not isinstance(expected, dict):
             raise ValueError(f"dataset item {item_id} requires expectedOutput")
-        if not isinstance(expected.get("themes"), list) or not expected["themes"]:
-            raise ValueError(f"dataset item {item_id} requires expectedOutput.themes")
-        if not isinstance(expected.get("gaps"), list) or not expected["gaps"]:
-            raise ValueError(f"dataset item {item_id} requires expectedOutput.gaps")
+        is_research_case = isinstance(expected.get("themes"), list) and isinstance(expected.get("gaps"), list)
+        is_agent_case = all(
+            key in expected for key in ("plan_action", "verification", "next_action", "max_iterations")
+        )
+        if not is_research_case and not is_agent_case:
+            raise ValueError(
+                f"dataset item {item_id} requires research themes/gaps or agent plan/verification expectations"
+            )
         ids.add(item_id)
     return payload
 
@@ -275,6 +286,110 @@ def run_research_experiment(
         data=data,
         task=task,
         evaluators=evaluators,
+        max_concurrency=max_concurrency,
+        metadata=experiment_metadata,
+    )
+
+
+def _agent_task(settings: Settings) -> Callable[..., dict[str, object]]:
+    async def task(*, item: object, **_: object) -> dict[str, object]:
+        item_input, _ = _case_parts(item)
+        fixture = item_input.get("fixture")
+        if not isinstance(fixture, str):
+            raise ValueError("agent evaluation item input.fixture must be a string")
+        fixture_root = settings.project_root / fixture
+        if not (fixture_root / "raw").is_dir():
+            raise ValueError(f"agent evaluation fixture is missing raw/: {fixture_root}")
+
+        with TemporaryDirectory(prefix="wiki-agent-eval-") as temp_dir:
+            workspace = Path(temp_dir)
+            raw = workspace / "data/raw"
+            wiki = workspace / "data/wiki"
+            copytree(fixture_root / "raw", raw)
+            wiki.mkdir(parents=True)
+            fixture_settings = settings.model_copy(
+                update={
+                    "project_root": workspace,
+                    "data_raw_dir": raw,
+                    "data_wiki_dir": wiki,
+                    "llm_compile": False,
+                    "semantic_links": False,
+                    "qmd_refresh": False,
+                    "lint_on_run": True,
+                    "langfuse_tracing_enabled": False,
+                }
+            )
+            inspection = inspect_workspace(fixture_settings)
+            plan = make_plan(inspection)
+            if plan.action == "stop":
+                return {
+                    "plan_action": plan.action,
+                    "verification": "not_run",
+                    "next_action": plan.action,
+                    "iterations": 0,
+                    "warnings": 0,
+                    "errors": 0,
+                }
+            state = await asyncio.to_thread(run_once, settings=fixture_settings, lint_strict=False)
+            post_inspection = inspect_workspace(fixture_settings)
+            next_plan = replan_after_verification(state, post_inspection)
+            return {
+                "plan_action": plan.action,
+                "verification": "failed" if state.get("last_error") else "passed",
+                "next_action": next_plan.action,
+                "iterations": 1,
+                "warnings": int(state.get("lint_warning_count", 0)),
+                "errors": int(state.get("lint_error_count", 0)),
+            }
+
+    return task
+
+
+def _agent_evaluators() -> list[Callable[..., Evaluation]]:
+    def evaluator(*, input: object, output: object, expected_output: object, **_: object) -> list[Evaluation]:
+        if not isinstance(output, Mapping) or not isinstance(expected_output, Mapping):
+            return [Evaluation(name="agent_contract", value=0.0, comment="Invalid task output")]
+        expected = expected_output
+        checks = {
+            "plan": output.get("plan_action") == expected.get("plan_action"),
+            "verification": output.get("verification") == expected.get("verification"),
+            "safe_stop": output.get("next_action") == expected.get("next_action"),
+            "boundedness": int(output.get("iterations", 99)) <= int(expected.get("max_iterations", 0)),
+        }
+        return [
+            Evaluation(name=f"agent_{name}", value=1.0 if passed else 0.0, comment=f"Expected {key}")
+            for name, (key, passed) in zip(
+                ("plan_quality", "verification", "safe_stop", "boundedness"),
+                (("plan_action", checks["plan"]), ("verification", checks["verification"]), ("next_action", checks["safe_stop"]), ("max_iterations", checks["boundedness"])),
+            )
+        ]
+
+    return [evaluator]
+
+
+def run_agent_experiment(
+    *,
+    settings: Settings,
+    dataset_path: Path,
+    name: str | None = None,
+    max_concurrency: int = 1,
+) -> object:
+    """Run bounded agent fixture cases through a hosted Langfuse dataset."""
+    if max_concurrency < 1:
+        raise ValueError("max_concurrency must be at least 1")
+    client = langfuse_client(settings)
+    if client is None:
+        raise RuntimeError("Langfuse is not configured; enable tracing and set both project keys")
+    payload = load_evaluation_dataset(dataset_path)
+    dataset_name = str(payload["name"])
+    dataset = client.get_dataset(dataset_name)
+    metadata = payload.get("metadata", {})
+    experiment_metadata = {key: str(value) for key, value in metadata.items()} if isinstance(metadata, dict) else {}
+    return dataset.run_experiment(
+        name=name or dataset_name,
+        description=str(payload.get("description", "")),
+        task=_agent_task(settings),
+        evaluators=_agent_evaluators(),
         max_concurrency=max_concurrency,
         metadata=experiment_metadata,
     )
