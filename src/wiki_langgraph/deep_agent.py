@@ -15,6 +15,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph.state import CompiledStateGraph
 
 from wiki_langgraph.config import Settings, load_settings
+from wiki_langgraph.observability import langfuse_callback
 
 
 def bundled_skills_dir() -> Path:
@@ -49,7 +50,11 @@ def chat_model_from_settings(settings: Settings) -> ChatOpenAI:
     }
     if settings.openai_api_base:
         kwargs["base_url"] = settings.openai_api_base
-    return ChatOpenAI(**kwargs)
+    model = ChatOpenAI(**kwargs)
+    callback = langfuse_callback(settings)
+    if callback is not None and hasattr(model, "with_config"):
+        return model.with_config(callbacks=[callback])
+    return model
 
 
 def deep_agent_memory(settings: Settings) -> list[str]:

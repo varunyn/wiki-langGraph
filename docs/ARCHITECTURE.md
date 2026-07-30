@@ -24,6 +24,19 @@ flowchart LR
 
 Each graph node is registered as an async LangGraph node with explicit `timeout` and `error_handler` policies. `wiki-langgraph run` remains synchronous at the CLI boundary, but internally uses `ainvoke` so LangGraph can enforce node timeouts. Timeouts are configured with `WIKI_GRAPH_INGEST_TIMEOUT_SEC`, `WIKI_GRAPH_COMPILE_TIMEOUT_SEC`, `WIKI_GRAPH_INDEX_TIMEOUT_SEC`, and `WIKI_GRAPH_LINT_TIMEOUT_SEC`.
 
+### Langfuse tracing
+
+When LANGFUSE_TRACING_ENABLED=true and both Langfuse project keys are set,
+observability.py creates a v4 root observation for each run, query, or
+research request. Pipeline nodes become child spans, and the LangChain callback
+handler records nested LLM generations for authoring, semantic links, queries,
+research, and Deep Agents. The integration is opt-in and degrades to a no-op
+when credentials are absent.
+
+The standard LANGFUSE_* variables are accepted directly from .env. Use
+LANGFUSE_BASE_URL=http://localhost:3300 for the local v4 server; optional
+environment and release labels propagate to the observations.
+
 ---
 
 ## When `WIKI_SEMANTIC_LINKS=true`

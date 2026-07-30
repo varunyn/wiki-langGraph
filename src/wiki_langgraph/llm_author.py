@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 
 from wiki_langgraph.config import Settings
 from wiki_langgraph.obsidian_prompt import wiki_llm_system_instructions
+from wiki_langgraph.observability import invoke_with_optional_callback
 
 logger = logging.getLogger(__name__)
 
@@ -173,11 +174,10 @@ def author_raw_to_wiki_markdown(
 
     try:
         llm = ChatOpenAI(**kwargs)
-        msg = llm.invoke(
-            [
-                SystemMessage(content=system),
-                HumanMessage(content=human_content),
-            ]
+        msg = invoke_with_optional_callback(
+            llm,
+            [SystemMessage(content=system), HumanMessage(content=human_content)],
+            settings,
         )
         out = _message_text(msg)
         out = out.strip()

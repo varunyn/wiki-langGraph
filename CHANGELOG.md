@@ -1,3 +1,8 @@
+## 2026-07-30
+
+- Added optional Langfuse v4 tracing for pipeline steps and all current LLM paths.
+- Reorganized the README around quick start, command workflows, optional AI features, linting, and configuration so first-time setup is easier to follow.
+
 ## 2026-07-28
 
 ### 0.4.0
