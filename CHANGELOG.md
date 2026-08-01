@@ -1,3 +1,7 @@
+## 2026-08-01
+
+- Added weekly Dependabot version updates for the project's `uv` dependencies.
+
 ## 2026-07-30
 
 - Added optional Langfuse v4 tracing for pipeline steps and all current LLM paths.
