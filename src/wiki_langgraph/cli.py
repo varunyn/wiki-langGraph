@@ -21,6 +21,7 @@ from wiki_langgraph.agentic import (
 from wiki_langgraph.config import Settings, load_settings
 from wiki_langgraph.deep_review import review_candidates
 from wiki_langgraph.graph import run_once
+from wiki_langgraph.knowledge_gap_review import review_knowledge_gaps
 from wiki_langgraph.lint import fix_unresolved_wikilinks, run_lint
 from wiki_langgraph.logging_config import configure_logging
 from wiki_langgraph.manifest import changed_md_relpaths, load_manifest, save_manifest
@@ -110,6 +111,28 @@ def _review_reject(root: Path, candidate_id: str) -> int:
         return 1
     shutil.rmtree(path)
     print(f"rejected {candidate_id}")
+    return 0
+
+
+def _review_gaps(settings: Settings, *, scope: str | None, limit: int) -> int:
+    """Run the read-only knowledge-gap review and print its audit trail."""
+    try:
+        result = review_knowledge_gaps(settings, scope=scope, limit=limit)
+    except Exception as exc:  # noqa: BLE001 - CLI must turn setup/agent failures into diagnostics
+        print(f"review gaps: {exc}", file=sys.stderr)
+        return 1
+
+    print("knowledge-gap review audit:")
+    print(f"  scope: {result.scope if result.scope is not None else '(all)'}")
+    print(f"  coverage: {'partial' if result.partial else 'complete'}")
+    print(f"  reviewed paths: {len(result.reviewed_paths)}")
+    for path in result.reviewed_paths:
+        print(f"    - {path}")
+    print(f"  omitted notes: {result.omitted_count}")
+    print("  read allowlist:")
+    for path in result.read_allowlist:
+        print(f"    - {path}")
+    print(result.render_markdown())
     return 0
 
 
@@ -261,7 +284,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Save the brief as a raw markdown note under Research/",
     )
 
-    review_p = sub.add_parser("review", help="Inspect and resolve LLM compile review candidates")
+    review_p = sub.add_parser(
+        "review",
+        help="Inspect compile candidates or run a read-only editorial knowledge-gap review",
+    )
     review_sub = review_p.add_subparsers(dest="review_command", required=True)
     review_sub.add_parser("list", help="List pending LLM compile candidates")
     review_show = review_sub.add_parser("show", help="Show one pending candidate")
@@ -270,6 +296,22 @@ def main(argv: list[str] | None = None) -> int:
     review_approve.add_argument("candidate_id")
     review_reject = review_sub.add_parser("reject", help="Reject one pending candidate")
     review_reject.add_argument("candidate_id")
+    review_gaps = review_sub.add_parser(
+        "gaps",
+        help="Run a bounded, read-only review for missing or weakly connected knowledge",
+    )
+    review_gaps.add_argument(
+        "scope",
+        nargs="?",
+        help="Optional Markdown file or directory relative to the raw and wiki roots",
+    )
+    review_gaps.add_argument(
+        "--limit",
+        type=int,
+        default=24,
+        metavar="N",
+        help="Maximum logical notes to review (default: 24; range: 1-100)",
+    )
 
     lint_p = sub.add_parser("lint", help="Check raw markdown for unresolved wikilinks and wiki Index drift")
     lint_p.add_argument(
@@ -437,6 +479,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "review":
+        if args.review_command == "gaps":
+            if not 1 <= args.limit <= 100:
+                parser.error("review gaps --limit must be between 1 and 100")
+            settings = load_settings()
+            configure_logging(settings)
+            return _review_gaps(settings, scope=args.scope, limit=args.limit)
         settings = load_settings()
         configure_logging(settings)
         root = candidate_root(settings.project_root)

@@ -110,6 +110,7 @@ def create_wiki_deep_agent(
     system_prompt: str | None = None,
     read_only: bool = False,
     read_paths: list[str] | None = None,
+    response_format: object | None = None,
 ) -> CompiledStateGraph:
     """Create a Deep Agent with ``/skills/`` wired to Obsidian OFM (progressive disclosure).
 
@@ -123,6 +124,7 @@ def create_wiki_deep_agent(
         system_prompt: Extra instructions prepended to the base deep-agent prompt.
         read_only: Deny filesystem writes, for review-only invocations.
         read_paths: Optional allowlist for read-only invocations.
+        response_format: Optional structured response schema passed to Deep Agents.
 
     Returns:
         A compiled LangGraph agent ready to ``invoke`` / ``astream``.
@@ -130,7 +132,7 @@ def create_wiki_deep_agent(
     cfg = settings or load_settings()
     backend = wiki_filesystem_backend(cfg)
     resolved_model = model if model is not None else chat_model_from_settings(cfg)
-    return create_deep_agent(
+    kwargs: dict[str, object] = dict(
         model=resolved_model,
         backend=backend,
         skills=["/skills/"],
@@ -138,3 +140,6 @@ def create_wiki_deep_agent(
         permissions=deep_agent_permissions(read_only=read_only, read_paths=read_paths),
         system_prompt=system_prompt,
     )
+    if response_format is not None:
+        kwargs["response_format"] = response_format
+    return create_deep_agent(**kwargs)

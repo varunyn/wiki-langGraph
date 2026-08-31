@@ -85,3 +85,45 @@ def test_review_reject_removes_candidate(tmp_path: Path, monkeypatch, capsys) ->
 
     assert not candidate_dir.exists()
     assert "rejected note-md-abc123" in capsys.readouterr().out
+
+
+def test_review_gaps_prints_audit_and_report(tmp_path: Path, monkeypatch, capsys) -> None:  # noqa: ANN001
+    _review_env(monkeypatch, tmp_path)
+    calls: list[tuple[object, str | None, int]] = []
+
+    class Result:
+        scope = "Architecture"
+        partial = True
+        reviewed_paths = ["Architecture/overview.md"]
+        omitted_count = 2
+        read_allowlist = ["/raw/Architecture/overview.md", "/wiki/Architecture/overview.md"]
+
+        def render_markdown(self) -> str:
+            return "# Knowledge-gap review\n\n- finding"
+
+    def fake_review(settings, *, scope, limit):  # noqa: ANN001
+        calls.append((settings, scope, limit))
+        return Result()
+
+    monkeypatch.setattr("wiki_langgraph.cli.review_knowledge_gaps", fake_review)
+
+    assert main(["review", "gaps", "Architecture", "--limit", "7"]) == 0
+
+    out = capsys.readouterr().out
+    assert calls[0][1:] == ("Architecture", 7)
+    assert "scope: Architecture" in out
+    assert "coverage: partial" in out
+    assert "omitted notes: 2" in out
+    assert "/raw/Architecture/overview.md" in out
+    assert "# Knowledge-gap review" in out
+
+
+def test_review_gaps_rejects_limit_outside_contract(monkeypatch, tmp_path: Path) -> None:  # noqa: ANN001
+    _review_env(monkeypatch, tmp_path)
+
+    try:
+        main(["review", "gaps", "--limit", "101"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("expected argparse validation failure")

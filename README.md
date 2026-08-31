@@ -11,6 +11,7 @@ LangGraph pipeline that **ingests** raw markdown, **compiles** an **Open Knowled
 - Generates a rich OKF `index.md` with note metadata and graph counts.
 - Supports incremental LLM compile with optional enrichment of existing wiki notes.
 - Adds a risk-based review queue for generated LLM candidates.
+- Provides an explicit, read-only knowledge-gap review for missing, duplicated, or weakly connected concepts.
 - Lets you ask questions over the compiled wiki with `query`.
 - Lets you synthesize deeper research briefs with `research`.
 - Lets you save useful answers under raw `Queries/`, then compile them into future query context.
@@ -98,6 +99,7 @@ uv run wiki-langgraph version
 | `wiki-langgraph research "..."` | Synthesize a structured research brief from broader retrieved wiki context. |
 | `wiki-langgraph research "..." --save` | Save the brief as a raw note under `Research/` so future runs can compile it. |
 | `wiki-langgraph review list/show/approve/reject` | Inspect and resolve queued LLM compile candidates. |
+| `wiki-langgraph review gaps [scope] [--limit N]` | Run a bounded, read-only editorial review of knowledge gaps; it does not read or mutate the compile-candidate queue. |
 | `wiki-langgraph lint` | Check raw/wiki health without compiling. |
 | `wiki-langgraph lint --fix --dry-run` | Preview unresolved wikilink cleanup. |
 | `wiki-langgraph version` | Print package version. |
@@ -207,6 +209,23 @@ uv run wiki-langgraph review show <candidate-id>
 uv run wiki-langgraph review approve <candidate-id>
 uv run wiki-langgraph review reject <candidate-id>
 ```
+
+### Knowledge-gap review
+
+Use `review gaps` for an advisory editorial pass over the local raw and compiled corpus:
+
+```bash
+uv run wiki-langgraph review gaps
+uv run wiki-langgraph review gaps Architecture/ --limit 12
+```
+
+The optional scope is a Markdown file or directory relative to both configured roots. The review
+is bounded (24 logical notes by default, up to 100), read-only, and never writes notes, manifests,
+QMD state, or the candidate queue. Its Markdown report includes evidence-backed findings such as
+missing concept notes, weak connections, possible duplicates or conflicts, missing overviews, and
+source-to-wiki coverage concerns. Before the report, the command prints an audit of normalized
+scope, reviewed paths, omitted notes, and the file-level read allowlist. A partial review is clearly
+marked and should be narrowed before treating it as a corpus-wide assessment.
 
 Approving writes the queued markdown to the configured wiki path and records the raw content hash in the manifest so later incremental runs preserve the approved authored note.
 
