@@ -1,6 +1,6 @@
 [project]
 name = "wiki-langgraph"
-version = "0.5.0"
+version = "0.6.0"
 description = "LangGraph pipeline: ingest sources, compile Obsidian-style wiki, index, CLI agent hooks"
 readme = "README.md"
 license = { file = "LICENSE" }
