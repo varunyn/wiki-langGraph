@@ -18,6 +18,8 @@
   key findings explicitly require source wikilinks.
 - Clarified bounded knowledge-gap review prompts so scope-limited or inaccessible linked notes are
   treated as insufficient evidence rather than missing raw/wiki counterparts.
+- Added a curated LangGraph architecture note collection and documented the distinct candidate and
+  knowledge-gap DeepAgent review roles and safety boundaries.
 
 ## 2026-09-03
 
