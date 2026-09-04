@@ -37,6 +37,7 @@ by default, so it can be opened in Obsidian or another Markdown tool.
 - Optionally uses [QMD](https://github.com/tobi/qmd) for semantic retrieval and local index/embed refresh.
 - Lints unresolved input wikilinks, orphan notes, stale output, OKF frontmatter, and index drift.
 - Saves useful query and research results back into the raw vault so they become future context.
+- Provides a bounded, read-only knowledge-gap review for missing, duplicated, or weakly connected concepts.
 
 `wiki-langgraph` does not require an LLM or QMD for its basic compile path.
 
@@ -180,6 +181,24 @@ uv run wiki-langgraph review reject <candidate-id>
 
 Approval writes the candidate to the configured wiki path and records it in the
 incremental manifest.
+
+### Knowledge-gap review
+
+Use `review gaps` for an advisory editorial pass over the local raw and compiled corpus:
+
+```bash
+uv run wiki-langgraph review gaps
+uv run wiki-langgraph review gaps Architecture/ --limit 12
+```
+
+The optional scope is a Markdown file or directory relative to both configured roots. The review
+is bounded (24 logical notes by default, up to 100), read-only, and never writes notes, manifests,
+QMD state, or the candidate queue. Its Markdown report includes evidence-backed findings such as
+missing concept notes, weak connections, possible duplicates or conflicts, missing overviews, and
+source-to-wiki coverage concerns. Before the report, the command prints an audit of normalized
+scope, reviewed paths, omitted notes, and the file-level read allowlist. A partial review is clearly
+marked and should be narrowed before treating it as a corpus-wide assessment.
+
 
 ## Optional AI features
 

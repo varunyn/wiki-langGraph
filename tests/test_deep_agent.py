@@ -3,11 +3,16 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from deepagents.backends import FilesystemBackend
+from deepagents.middleware.filesystem import FilesystemMiddleware
+from langchain.tools import ToolRuntime
+
 from wiki_langgraph.config import Settings
 from wiki_langgraph.deep_agent import (
     bundled_skills_dir,
     chat_model_from_settings,
     create_wiki_deep_agent,
+    deep_agent_permissions,
     wiki_filesystem_backend,
 )
 
@@ -118,3 +123,66 @@ def test_create_wiki_deep_agent_read_only_adds_write_deny_rule(tmp_path: Path) -
         create_wiki_deep_agent(settings=cfg, read_only=True)
 
     assert len(captured["permissions"]) == 3
+
+
+def test_create_wiki_deep_agent_passes_response_format(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    class ResponseSchema:
+        pass
+
+    def fake_create_deep_agent(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    raw = tmp_path / "raw"
+    wiki = tmp_path / "wiki"
+    raw.mkdir()
+    wiki.mkdir()
+    cfg = Settings(
+        project_root=tmp_path,
+        data_raw_dir=raw,
+        data_wiki_dir=wiki,
+        openai_api_base="http://127.0.0.1:11434/v1",
+    )
+    with patch("wiki_langgraph.deep_agent.create_deep_agent", fake_create_deep_agent):
+        create_wiki_deep_agent(settings=cfg, response_format=ResponseSchema)
+
+    assert captured["response_format"] is ResponseSchema
+
+
+def test_read_only_permissions_are_enforced_by_filesystem_tools(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed.md"
+    blocked = tmp_path / "blocked.md"
+    allowed.write_text("allowed", encoding="utf-8")
+    blocked.write_text("blocked", encoding="utf-8")
+    middleware = FilesystemMiddleware(
+        backend=FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True),
+        _permissions=deep_agent_permissions(
+            read_only=True,
+            read_paths=["/allowed.md"],
+        ),
+    )
+    runtime = ToolRuntime(
+        state={},
+        context=None,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id="permission-test",
+        store=None,
+    )
+    tools = {tool.name: tool for tool in middleware.tools}
+
+    allowed_read = tools["read_file"].func(file_path="/allowed.md", runtime=runtime)
+    blocked_read = tools["read_file"].func(file_path="/blocked.md", runtime=runtime)
+    blocked_write = tools["write_file"].func(
+        file_path="/allowed.md",
+        content="changed",
+        runtime=runtime,
+    )
+
+    assert "allowed" in str(allowed_read.content)
+    assert blocked_read.status == "error"
+    assert "permission denied" in str(blocked_read.content)
+    assert blocked_write.status == "error"
+    assert allowed.read_text(encoding="utf-8") == "allowed"

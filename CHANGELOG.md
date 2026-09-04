@@ -1,3 +1,8 @@
+## 2026-08-31
+
+- Added bounded, evidence-backed `review gaps` analysis that reuses the existing read-only
+  DeepAgent factory and returns validated structured findings with an auditable file allowlist.
+
 ## 2026-08-01
 
 - Added weekly Dependabot version updates for the project's `uv` dependencies.
