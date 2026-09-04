@@ -149,6 +149,38 @@ def test_selection_prioritizes_missing_counterpart_then_outgoing_links(
     assert "narrow the scope" in result.report
 
 
+def test_partial_prompt_distinguishes_omitted_notes_from_source_gaps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    _write_pair(settings, "alpha.md", "# Alpha\n\n[[Beta]] [[Gamma]]")
+    _write_pair(settings, "beta.md", "# Beta\n\n[[Alpha]]")
+    _write_pair(settings, "gamma.md", "# Gamma\n\n[[Alpha]]")
+    captured: dict[str, object] = {}
+
+    class Agent:
+        def invoke(self, payload: object) -> object:
+            captured["payload"] = payload
+            return _agent_result()
+
+    monkeypatch.setattr(
+        "wiki_langgraph.knowledge_gap_review.create_wiki_deep_agent",
+        lambda **_: Agent(),
+    )
+
+    review_knowledge_gaps(settings, limit=2)
+
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    prompt = payload["messages"][0]["content"]  # type: ignore[index]
+    assert '"partial": true' in prompt
+    assert '"selected_count": 2' in prompt
+    assert '"omitted_count": 1' in prompt
+    assert "Coverage limits are not editorial gaps" in prompt
+    assert "Use source_coverage_gap only when a supplied record has raw_path or wiki_path set to null" in prompt
+
+
 def test_preanalysis_includes_title_and_resolved_authored_relationships(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

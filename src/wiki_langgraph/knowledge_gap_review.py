@@ -448,7 +448,20 @@ def review_knowledge_gaps(
         "before making findings. Return only the structured schema. Evidence.path must equal an "
         "exact successfully inspected virtual path. Duplicate or conflict findings require two "
         "distinct inspected paths and a non-empty uncertainty. affected_paths must use the logical "
-        "path values below. Do not write files.\n\n"
+        "path values below. Do not write files. Coverage limits are not editorial gaps: an "
+        "unselected or inaccessible linked note is insufficient evidence, not a "
+        "source_coverage_gap. Use source_coverage_gap only when a supplied record has raw_path or "
+        "wiki_path set to null, because that proves a raw/wiki counterpart is missing.\n\n"
+        "Review context:\n"
+        + json.dumps(
+            {
+                "partial": omitted > 0,
+                "selected_count": len(selected),
+                "omitted_count": omitted,
+            },
+            indent=2,
+        )
+        + "\n\nRecords:\n"
         + json.dumps(metadata, indent=2)
     )
     agent = create_wiki_deep_agent(

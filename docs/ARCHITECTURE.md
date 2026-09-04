@@ -24,6 +24,22 @@ flowchart LR
 
 Each graph node is registered as an async LangGraph node with explicit `timeout` and `error_handler` policies. `wiki-langgraph run` remains synchronous at the CLI boundary, but internally uses `ainvoke` so LangGraph can enforce node timeouts. Timeouts are configured with `WIKI_GRAPH_INGEST_TIMEOUT_SEC`, `WIKI_GRAPH_COMPILE_TIMEOUT_SEC`, `WIKI_GRAPH_INDEX_TIMEOUT_SEC`, and `WIKI_GRAPH_LINT_TIMEOUT_SEC`.
 
+### Langfuse tracing
+
+When LANGFUSE_TRACING_ENABLED=true and both Langfuse project keys are set,
+observability.py creates a v4 root observation for each run, query, or
+research request. Pipeline nodes become child spans, and the LangChain callback
+handler records nested LLM generations for authoring, semantic links, queries,
+research, and Deep Agents. Query and research lexical lookup is a nested
+`RETRIEVER` observation whose output lists the selected source paths. The client
+sets a stable `wiki-langgraph` OpenTelemetry service name by default, and short-lived
+query/research/evaluation CLI commands flush explicitly. The integration is opt-in and degrades to a no-op
+when credentials are absent.
+
+The standard LANGFUSE_* variables are accepted directly from .env. Use
+LANGFUSE_BASE_URL=http://localhost:3300 for the local v4 server; optional
+environment and release labels propagate to the observations.
+
 ---
 
 ## When `WIKI_SEMANTIC_LINKS=true`
@@ -120,6 +136,7 @@ flowchart TB
 | **LLM authoring** | `llm_author.py` | Only if `WIKI_LLM_COMPILE=true`: rewrites selected raw `.md` → wiki-shaped markdown; injects `compiled_from:`; optional **enrich** from existing wiki. **Not** parallelized with semantic pass; `WIKI_LLM_COMPILE_MAX_WORKERS` only affects this step. |
 | **LLM review queue** | `review_queue.py` + `cli.py` | `WIKI_LLM_COMPILE_REVIEW=off\|risky\|all`. `risky` queues suspicious candidates and existing-note overwrites under `data/.wiki-langgraph/candidates/`; queued notes do not refresh manifest hashes, so they are retried until approved or rejected. CLI commands: `review list`, `review show`, `review approve`, `review reject`. |
 | **Knowledge-gap review** | `knowledge_gap_review.py` + `cli.py` | Explicit `review gaps [scope] [--limit N]` action. Resolves a bounded raw/wiki scope, performs deterministic pre-analysis, and invokes the existing read-only DeepAgent with an exact file-level allowlist. Validated findings are rendered as Markdown with coverage and access audit fields; no vault, manifest, QMD, or candidate-queue writes occur. |
+| **Evaluation experiments** | `evaluation.py` + `evals/` | Versioned Langfuse research, bounded-agent, and knowledge-gap datasets. Research-v1 remains the reviewed hosted default; successor definitions run locally until human-reviewed and published. Hosted runs accept an exact dataset-version timestamp. Agent and knowledge-gap cases run in temporary fixture workspaces; gap scores cover category precision/recall/F1, exact review scope, partial-review disclosure, bounded findings, and filesystem immutability. |
 | **Linking** | `linking.py` → `compile_linked_markdown` | Process raw markdown into the wiki; leave non-markdown raw assets in place; **Pass 1** semantic suggestions; **explicit-only** forward graph for Backlinks; **Related (semantic)** footer for inbound suggestions; **Pass 2** write; **`frontmatter_graph`** merge (`wiki_langgraph_*` plus OKF `type: Note`); render compiled/generated links as standard Markdown links in the default OKF profile. |
 | **Lint** | `lint.py` | **Batch:** `node_lint` after **index** (default). **Ad-hoc:** `wiki-langgraph lint` — same `run_lint` rules (unresolved wikilinks, `W_ORPHAN_NOTE`, `W_INDEX_DRIFT`, `W_STALE_WIKI`, `W_OKF_MISSING_TYPE` when OKF checks are enabled, `E_READ`, etc.). |
 

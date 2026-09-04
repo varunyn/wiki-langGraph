@@ -1,207 +1,179 @@
 # wiki-langgraph
 
-LangGraph pipeline that **ingests** raw markdown, **compiles** an **Open Knowledge Format (OKF)** markdown wiki (frontmatter, standard Markdown links, authored backlinks, semantic `See also`, `index.md`), optionally runs **LLM authoring**, supports **query → save → future context** compounding, refreshes a local **[QMD](https://github.com/tobi/qmd)** index when enabled, and **lints** the wiki.
+`wiki-langgraph` turns a folder of Markdown notes into a linked, searchable
+Markdown wiki. It is a Python 3.12+ LangGraph pipeline with a deterministic
+core and optional local AI features.
 
-## What it does now
+The important idea is simple:
 
-- Compiles raw markdown into a generated OKF markdown wiki that can be opened in Obsidian or any Markdown tool.
-- Preserves provenance with `compiled_from:` frontmatter.
-- Adds the OKF-required `type:` frontmatter field and uses standard Markdown links for generated navigation.
-- Keeps authored **Backlinks** separate from semantic **See also** / **Related (semantic)** suggestions.
-- Generates a rich OKF `index.md` with note metadata and graph counts.
-- Supports incremental LLM compile with optional enrichment of existing wiki notes.
-- Adds a risk-based review queue for generated LLM candidates.
-- Provides an explicit, read-only knowledge-gap review for missing, duplicated, or weakly connected concepts.
-- Lets you ask questions over the compiled wiki with `query`.
-- Lets you synthesize deeper research briefs with `research`.
-- Lets you save useful answers under raw `Queries/`, then compile them into future query context.
-- Optionally uses QMD for semantic related-note lookup and index/embed refresh.
-- Lints unresolved input wikilinks, orphan notes, stale output, OKF type frontmatter, and index drift.
-- Excludes the configured generated wiki directory from ingest when it lives inside the raw vault.
+```text
+raw Markdown  →  compile  →  linked wiki  →  query / research
+                     │
+                     └─ optional LLM authoring, semantic links, and QMD indexing
+```
 
-## Background: the “LLM Wiki” pattern
+The generated wiki uses the [Open Knowledge Format (OKF)](https://open-knowledge-format.org/)
+by default, so it can be opened in Obsidian or another Markdown tool.
 
-Andrej Karpathy [posted on X](https://x.com/karpathy/status/2039805659525644595) about a workflow where the model does not only retrieve chunks at question time (classic RAG), but **incrementally builds and maintains a persistent, interlinked markdown wiki** between you and your raw sources—so structure and synthesis **compound** instead of being re-derived every query. He expanded the idea in a copy-paste **idea file** ([gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)).
+## Choose your starting point
 
-**wiki-langgraph** is a **concrete implementation** of parts of that pattern: a reproducible compile pipeline, vault linking, optional LLM passes, optional local search/embeddings via QMD, and rule-based lint. The gist stays intentionally abstract; this repo pins directory layout, env vars, and graph behavior—see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full node graph and module map.
+| You want to… | Start here |
+| --- | --- |
+| Compile raw notes into a wiki | [Quick start](#quick-start) |
+| See what would happen before writing | [`run --plan`](#preview-before-you-run) |
+| Ask questions over the compiled wiki | [Query and research](#query-and-research) |
+| Add AI-written notes or summaries | [Optional AI features](#optional-ai-features) |
+| Fix broken links or stale output | [Lint and fix](#lint-and-fix) |
+| Understand the graph and file flow | [How it works](#how-it-works) |
+| Find every setting | [Configuration](#configuration) |
 
-## Prerequisites
+## What it does
 
-| Requirement                                             | When you need it                                                                                                                                                                        |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Python 3.12+**                                        | Always                                                                                                                                                                                  |
-| **[uv](https://docs.astral.sh/uv/)**                    | Always (install deps and run the CLI)                                                                                                                                                   |
-| **OpenAI-compatible HTTP API** (`WIKI_OPENAI_API_BASE`) | `query`, `research`, `WIKI_LLM_COMPILE=true`, and/or `WIKI_SEMANTIC_LINKS=true` with `WIKI_SEMANTIC_BACKEND=llm` (e.g. [Ollama](https://ollama.com/) with OpenAI compatibility, llama.cpp server, vLLM, etc.) |
-| **[QMD](https://github.com/tobi/qmd)** on `PATH`        | `WIKI_SEMANTIC_BACKEND=qmd` and/or `WIKI_QMD_REFRESH=true` (hybrid search + optional `qmd embed` after compile)                                                                         |
-| **Obsidian**                                            | Optional; useful as the reader/UI for the generated vault, not required to run the pipeline                                                                                             |
+- Recursively reads raw `.md` files from `data/raw/`.
+- Writes compiled notes to `data/wiki/`.
+- Adds frontmatter, provenance, standard Markdown navigation links, authored backlinks, and a generated `index.md`.
+- Keeps authored links separate from machine-suggested semantic links.
+- Optionally uses an OpenAI-compatible chat endpoint for note authoring, queries, research briefs, and semantic links.
+- Optionally uses [QMD](https://github.com/tobi/qmd) for semantic retrieval and local index/embed refresh.
+- Lints unresolved input wikilinks, orphan notes, stale output, OKF frontmatter, and index drift.
+- Saves useful query and research results back into the raw vault so they become future context.
+- Provides a bounded, read-only knowledge-gap review for missing, duplicated, or weakly connected concepts.
 
-**Minimal run:** no `.env` required if you are fine with defaults `data/raw` → `data/wiki` under the repo and you do not enable LLM compile, semantic LLM features, or QMD refresh. Anything that calls the chat API needs a reachable base URL and model id. QMD refresh is off by default for this minimal path.
+`wiki-langgraph` does not require an LLM or QMD for its basic compile path.
 
-## Setup
+## Quick start
+
+### 1. Install
+
+Requirements:
+
+- Python 3.12+
+- [`uv`](https://docs.astral.sh/uv/)
+
+From the repository root:
 
 ```bash
 uv sync
-cp .env.example .env   # optional; set paths and features below
 ```
 
-Settings load from the environment with prefix **`WIKI_`** (and optional **`.env`** in the current working directory). **`cp .env.example .env`** is the usual starting point; adjust only what you use.
+### 2. Add raw notes
 
-### OKF quick start
+Put Markdown files anywhere under `data/raw/`:
 
-The default output profile is already OKF. To make it explicit in `.env` and compile a raw markdown corpus:
-
-```bash
-WIKI_OUTPUT_PROFILE=okf
-uv run wiki-langgraph run -v
+```text
+data/raw/
+├── projects/
+│   └── wiki-langgraph.md
+└── concepts/
+    └── retrieval.md
 ```
 
-This reads notes recursively from `data/raw` and writes the generated OKF wiki to `data/wiki`. Each compiled concept note receives `type: Note` frontmatter, resolved internal links use standard Markdown syntax with source-relative paths, and the root registry is written to `data/wiki/index.md` with `okf_version: "0.2"`. OKF-reserved `index.md` and `log.md` files are preserved and excluded from the concept registry.
+The default directories are `data/raw/` for source notes and `data/wiki/` for
+generated output. You can change them with `WIKI_DATA_RAW_DIR` and
+`WIKI_DATA_WIKI_DIR`.
 
-Open the generated `data/wiki/` directory in any Markdown-compatible tool, including Obsidian. The legacy Obsidian output remains available with `WIKI_OUTPUT_PROFILE=obsidian`.
-
-`run --plan` is a no-write check for expensive work. `--only` accepts shell-style path globs (repeat it for multiple patterns), and `--limit` caps LLM authoring for that run. These controls intentionally limit only AI authoring; the deterministic compiler still uses the complete raw corpus so link resolution and `index.md` remain complete. With `WIKI_LLM_COMPILE=false`, they report or select no LLM calls.
-
-For a bounded agentic step, use `agent --dry-run` to inspect the workspace and proposed action. Running
-`agent` uses a bounded inspect → plan → act → verify → replan loop (two iterations by default).
-Warnings are reported without blocking the agent, while lint errors still fail it. When no safe
-automatic next action exists, it stops for review rather than retrying indefinitely. Use
-`--max-iterations N` to change the bound.
-
-## Run
+### 3. Compile
 
 ```bash
 uv run wiki-langgraph run -v
-uv run wiki-langgraph run --plan
-uv run wiki-langgraph run --plan --only '20-29 Writing/**/*.md' --limit 5
-uv run wiki-langgraph agent --dry-run
-uv run wiki-langgraph agent --only '20-29 Writing/**/*.md' --limit 5
-uv run wiki-langgraph agent --deep-review
-uv run wiki-langgraph query "How should I debug RAG failures?"
-uv run wiki-langgraph query "How should I debug RAG failures?" --save
-uv run wiki-langgraph research "Compare RAG failures and evaluation loops" --save
-uv run wiki-langgraph review list
+```
+
+This runs:
+
+```text
+ingest → compile → optional QMD refresh → lint
+```
+
+Open `data/wiki/` in Obsidian or any Markdown-compatible tool after the run.
+The default output profile is OKF. To preserve the legacy Obsidian-style
+output, set `WIKI_OUTPUT_PROFILE=obsidian`.
+
+### 4. Inspect the result
+
+```bash
 uv run wiki-langgraph lint
 uv run wiki-langgraph version
 ```
 
-### Command reference
+The generated `data/wiki/index.md` is the registry of compiled notes. It is
+regenerated on every compile, even when individual notes have not changed.
 
-| Command | Purpose |
-| --- | --- |
-| `wiki-langgraph run -v` | Run ingest → compile → optional QMD refresh → lint. |
-| `wiki-langgraph run --plan` | Show corpus size and estimated LLM work without writing files or calling APIs. |
-| `wiki-langgraph run --only 'pattern' --limit N` | Limit LLM authoring to matching raw paths and at most `N` files; deterministic compilation still sees the full corpus. |
-| `wiki-langgraph agent --dry-run` | Inspect → plan without writing files or calling APIs. |
-| `wiki-langgraph agent [--only 'pattern'] [--limit N]` | Execute the bounded inspect → plan → graph → verify → replan cycle. |
-| `wiki-langgraph agent --deep-review` | Explicitly invoke a path-scoped, read-only DeepAgent review for queued candidates; approval remains manual. |
-| `wiki-langgraph query "..."` | Answer a question using retrieved compiled wiki notes. |
-| `wiki-langgraph query "..." --save` | Save the answer as a raw note under `Queries/` so future runs can compile it. |
-| `wiki-langgraph research "..."` | Synthesize a structured research brief from broader retrieved wiki context. |
-| `wiki-langgraph research "..." --save` | Save the brief as a raw note under `Research/` so future runs can compile it. |
-| `wiki-langgraph review list/show/approve/reject` | Inspect and resolve queued LLM compile candidates. |
-| `wiki-langgraph review gaps [scope] [--limit N]` | Run a bounded, read-only editorial review of knowledge gaps; it does not read or mutate the compile-candidate queue. |
-| `wiki-langgraph lint` | Check raw/wiki health without compiling. |
-| `wiki-langgraph lint --fix --dry-run` | Preview unresolved wikilink cleanup. |
-| `wiki-langgraph version` | Print package version. |
+## Preview before you run
 
-### Lint catches unresolved links, orphan notes, and stale wiki output
-
-`wiki-langgraph lint` checks the raw/wiki pair for a few high-signal problems:
-
-- unresolved `[[wikilinks]]` inside the ingested raw tree
-- markdown notes with **no outgoing internal links** (`W_ORPHAN_NOTE`), which are often suspect when the source corpus is incomplete or incorrectly split
-- raw notes newer than their compiled wiki output (`W_STALE_WIKI`)
-- `index.md` drift versus the compiled note catalog
-
-Generated index notes are exempt from the orphan-note warning. To clean unresolved links automatically:
+Use `--plan` when you want to inspect the corpus and estimated AI work without
+writing files or calling APIs:
 
 ```bash
-uv run wiki-langgraph lint --fix --dry-run   # preview: fuzzy rewrites + strip the rest
-uv run wiki-langgraph lint --fix             # edit raw .md under WIKI_DATA_RAW_DIR
-uv run wiki-langgraph lint --fix --fix-mode strip    # plain text only (no fuzzy rename)
-uv run wiki-langgraph lint --fix --fix-mode rewrite  # fuzzy only; leave what is still broken
+uv run wiki-langgraph run --plan
 ```
 
-**`--fix`** updates **raw** sources: it tries a **single unambiguous fuzzy match** to a catalog note label (`difflib`, configurable `--fuzzy-cutoff`), then turns any remaining broken links into **plain text** (keeping `[[note|alias]]` as `alias`). Re-run **`wiki-langgraph run`** so the wiki matches. It does **not** invent files for links that point outside your corpus—those become plain text unless fuzzy finds a close in-vault name.
+`--only` and `--limit` constrain optional LLM authoring only. The deterministic
+compiler still sees the complete raw corpus so link resolution and `index.md`
+remain complete:
 
-### Query and save explorations
+```bash
+uv run wiki-langgraph run --plan \
+  --only 'projects/**/*.md' \
+  --limit 5
+```
 
-Ask a question against the compiled wiki:
+## Command reference
+
+### Build and inspect
+
+| Command | What it does |
+| --- | --- |
+| `uv run wiki-langgraph run` | Run ingest, compile, optional QMD refresh, and lint. |
+| `uv run wiki-langgraph run -v` | Run with step logging. |
+| `uv run wiki-langgraph run --plan` | Preview selected files and AI work without writing or calling APIs. |
+| `uv run wiki-langgraph agent --dry-run` | Inspect the workspace and show a bounded proposed action. |
+| `uv run wiki-langgraph agent` | Run the bounded inspect → plan → act → verify → replan loop. |
+| `uv run wiki-langgraph agent --deep-review` | Opt into read-only review of queued AI candidates. |
+| `uv run wiki-langgraph eval` | Run the reviewed hosted research-v1 baseline through Langfuse. |
+| `uv run wiki-langgraph agent-eval` | Evaluate the bounded agent on isolated fixtures. |
+| `uv run wiki-langgraph gap-eval` | Evaluate the local draft knowledge-gap dataset on isolated fixtures. |
+| `uv run wiki-langgraph version` | Print the package version. |
+
+The bounded `agent` command runs two iterations by default and stops for
+manual review when there is no safe automatic action. Use
+`--max-iterations N` to change the bound.
+
+### Query and research
+
+These commands use the compiled wiki as context and require an OpenAI-compatible
+chat endpoint configured through `WIKI_OPENAI_API_BASE`.
 
 ```bash
 uv run wiki-langgraph query "How should I debug RAG failures?"
+uv run wiki-langgraph research "Compare RAG failures and evaluation loops"
 ```
 
-The query command uses a local lexical retriever over compiled wiki notes, sends the top notes to the configured chat model, and prints the answer plus source notes. Add `--save` to write the answer back into the raw vault under `Queries/`:
+Use `--save` to write the result into the raw vault:
 
 ```bash
 uv run wiki-langgraph query "How should I debug RAG failures?" --save
-uv run wiki-langgraph run -v
-```
-
-The saved raw note includes the source question, generated answer, and wikilinks to retrieved source notes. The next compile run turns it into a normal wiki page so future queries can use it as context.
-
-Saved query layout:
-
-```text
-raw vault:
-  Queries/How should I debug RAG failures.md
-
-compiled wiki:
-  wiki/Queries/How should I debug RAG failures.md
-```
-
-The raw `Queries/` note is the source of truth. The compiled `wiki/Queries/` page is generated output and appears in `index.md` like any other compiled note.
-
-### Research briefs
-
-Use `research` when you want a broader synthesis instead of a short answer:
-
-```bash
-uv run wiki-langgraph research "Compare RAG failures and evaluation loops"
 uv run wiki-langgraph research "Compare RAG failures and evaluation loops" --save
 uv run wiki-langgraph run -v
 ```
 
-Research mode uses the same compiled-wiki retrieval path as `query`, but defaults to more source notes and asks the model for a structured brief with summary, findings, source notes, related concepts, open questions, and follow-ups. With `--save`, the raw note is written under `Research/` and compiles into `wiki/Research/` on the next run, so those investigations become future retrieval context too.
+Saved notes are sources of truth in the raw vault. They compile into generated
+pages on the next run:
 
-## Configuration (environment variables)
+```text
+raw:       data/raw/Queries/<question>.md
+generated: data/wiki/Queries/<question>.md
 
-All names are listed in **`.env.example`**. Below is what matters and when to set it.
+raw:       data/raw/Research/<question>.md
+generated: data/wiki/Research/<question>.md
+```
 
-### Paths and project layout
+`query` uses the top five retrieved notes by default; `research` uses the top
+eight. Change either with `--top-k N`.
 
-| Variable             | Purpose                                                                                                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WIKI_DATA_RAW_DIR`  | Root folder to **ingest** (recursive). Default: `<project>/data/raw`.                                                                                                                           |
-| `WIKI_DATA_WIKI_DIR` | **Compiled vault** output. Default: `<project>/data/wiki`. Set this when your vault lives inside a larger Obsidian tree; see `.env.example` for avoiding duplicated `wiki/wiki/` path segments. |
-| `WIKI_OUTPUT_PROFILE` | `okf` (default) or `obsidian` (legacy). `okf` emits OKF-compatible concept frontmatter (`type: Note`) and standard Markdown links in compiled body content, generated navigation sections, and the generated index body. |
+### Review AI-generated candidates
 
-If unset, paths are derived from the package location (repo root when developing). If `WIKI_DATA_WIKI_DIR` is inside `WIKI_DATA_RAW_DIR`, the generated wiki folder is excluded from ingest and lint source enumeration so generated pages do not feed back as raw input.
-
-The compiler writes the generated root registry to OKF's reserved lowercase `index.md` and declares `okf_version: "0.2"`. If a legacy generated `Index.md` exists, compile migrates the directory entry to lowercase before writing the new registry. Any `log.md` files are treated as OKF update logs rather than concept documents.
-
-### OpenAI-compatible LLM (chat HTTP)
-
-| Variable                       | Purpose                                                                                                                                       |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WIKI_OPENAI_API_BASE`         | Base URL for chat completions, e.g. `http://127.0.0.1:11434/v1` (Ollama). **Required** for `query`, `research`, `WIKI_LLM_COMPILE`, or semantic LLM backend. |
-| `WIKI_OPENAI_API_KEY`          | Sent as the API key; many local servers ignore it—default in config is a placeholder.                                                         |
-| `WIKI_LLM_MODEL`               | Model id passed to the API (e.g. your Ollama model name).                                                                                     |
-| `WIKI_LLM_REQUEST_TIMEOUT_SEC` | Per-request HTTP timeout; long local generations often need **hundreds of seconds**.                                                          |
-
-### LLM “compile” (raw → wiki markdown)
-
-| Variable                       | Purpose                                                                                                                                                     |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WIKI_LLM_COMPILE`             | If `true`, each changed raw `.md` is rewritten through the chat model (Obsidian-oriented prompts) before writing the wiki. Requires `WIKI_OPENAI_API_BASE`. |
-| `WIKI_LLM_COMPILE_INCREMENTAL` | If `true`, only re-author files whose **raw** content changed (hash manifest under `data/.wiki-langgraph/` by default).                                     |
-| `WIKI_LLM_COMPILE_ENRICH`      | If `true`, merge new raw into **existing** wiki notes instead of full rewrite when a note already exists.                                                   |
-| `WIKI_LLM_COMPILE_MAX_WORKERS` | Thread pool size for authoring. **Default `1`**: local servers usually handle one completion at a time; raising this can cause timeouts.                    |
-| `WIKI_LLM_COMPILE_REVIEW`      | `off` (default), `risky`, or `all`. `risky` auto-applies low-risk generated notes and queues risky candidates under `data/.wiki-langgraph/candidates/`.      |
-| `WIKI_MANIFEST_PATH`           | Optional override for the incremental hash / semantic-cache JSON file. Deleted notes are pruned from stored hashes and semantic caches on later runs.       |
-
-Review queue commands:
+Set `WIKI_LLM_COMPILE_REVIEW=risky` or `all` to queue generated notes for
+manual review instead of writing every candidate directly:
 
 ```bash
 uv run wiki-langgraph review list
@@ -209,6 +181,9 @@ uv run wiki-langgraph review show <candidate-id>
 uv run wiki-langgraph review approve <candidate-id>
 uv run wiki-langgraph review reject <candidate-id>
 ```
+
+Approval writes the candidate to the configured wiki path and records it in the
+incremental manifest.
 
 ### Knowledge-gap review
 
@@ -227,84 +202,263 @@ source-to-wiki coverage concerns. Before the report, the command prints an audit
 scope, reviewed paths, omitted notes, and the file-level read allowlist. A partial review is clearly
 marked and should be narrowed before treating it as a corpus-wide assessment.
 
-Approving writes the queued markdown to the configured wiki path and records the raw content hash in the manifest so later incremental runs preserve the approved authored note.
 
-Risky candidates include existing-note overwrites, empty or very short output, missing `compiled_from`, large shrinkage, and high wikilink churn. Queued candidates do not update the raw hash in the manifest until approved, so they are retried or remain visible instead of being silently considered done.
+## Optional AI features
 
-### Semantic “See also” / related notes
+The base compile path is deterministic. Enable only the capability you need.
 
-| Variable                                                             | Purpose                                                                             |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `WIKI_SEMANTIC_LINKS`                                                | If `true`, compile suggests related notes (separate from authored source links). |
-| `WIKI_SEMANTIC_BACKEND`                                              | `llm` (needs API base) or `qmd` (local CLI).                                        |
-| `WIKI_QMD_BIN`, `WIKI_QMD_COLLECTION`                                | QMD executable and collection name for `qmd query` / refresh.                       |
-| `WIKI_QMD_MIN_SCORE`, `WIKI_QMD_TOP_N`, `WIKI_QMD_CANDIDATE_LIMIT`  | Tune retrieval quality and candidate breadth.                                       |
-| `WIKI_QMD_NO_RERANK`, `WIKI_QMD_QUERY_TIMEOUT_SEC`                  | Skip reranking for faster CPU-friendly queries and tune query timeouts.             |
-| `WIKI_QMD_CHUNK_STRATEGY`                                           | QMD chunking mode for query/embed: `regex` (default) or `auto`.                     |
+### LLM authoring: raw notes → authored wiki Markdown
 
-### QMD index refresh (after compile)
+Set an OpenAI-compatible endpoint and enable compilation:
 
-| Variable                       | Purpose                                                                                                                                                                                                                    |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WIKI_QMD_REFRESH`             | If `true`, after writing wiki files run `qmd update` and `qmd embed` for the configured collection. **Default `false`** so a minimal run does not require QMD; enable it when local QMD indexing is installed and desired. |
-| `WIKI_QMD_REFRESH_TIMEOUT_SEC`        | Subprocess timeout for refresh.                                                                                                                                                                                            |
-| `WIKI_QMD_EMBED_MAX_DOCS_PER_BATCH`   | Optional cap for documents loaded per `qmd embed` batch.                                                                                                                                                                    |
-| `WIKI_QMD_EMBED_MAX_BATCH_MB`         | Optional UTF-8 MB cap for each `qmd embed` batch.                                                                                                                                                                          |
-| `WIKI_QMD_CPU_ONLY`                   | If `true`, force CPU for node-llama-cpp-backed query/embed work when Metal/GPU fails on macOS.                                                                                                                             |
+```dotenv
+WIKI_OPENAI_API_BASE=http://127.0.0.1:11434/v1
+WIKI_LLM_MODEL=your-model
+WIKI_LLM_COMPILE=true
+```
 
-### Graph runtime
+Ollama, llama.cpp servers, vLLM, and other compatible servers can be used.
+Authoring is incremental by default: only raw notes whose content changed are
+sent to the model. The manifest is stored at
+`data/.wiki-langgraph/manifest.json` by default.
+
+Useful controls:
+
+```dotenv
+WIKI_LLM_COMPILE_INCREMENTAL=true
+WIKI_LLM_COMPILE_ENRICH=false
+WIKI_LLM_COMPILE_MAX_WORKERS=1
+WIKI_LLM_COMPILE_REVIEW=off   # off, risky, or all
+```
+
+`WIKI_LLM_COMPILE_MAX_WORKERS` defaults to `1` because local servers often
+process one completion at a time.
+
+### Semantic links: “See also”
+
+Semantic links are recommendations, not authored citations:
+
+```dotenv
+WIKI_SEMANTIC_LINKS=true
+WIKI_SEMANTIC_BACKEND=llm    # llm or qmd
+```
+
+The generated wiki keeps these concepts separate:
+
+| Output | Meaning |
+| --- | --- |
+| `Backlinks` | Inbound links created by authored `[[wikilinks]]` only. |
+| `See also` | Outbound machine-suggested related notes. |
+| `Related (semantic)` | Inbound machine-suggested relationships. |
+
+This prevents similarity recommendations from being mistaken for authored
+evidence.
+
+### QMD search and refresh
+
+QMD has two independent uses. Install QMD and put it on `PATH` if you use
+either one. Use QMD v2.8.3 or newer for its upstream security and index/query
+correctness fixes; wiki-langgraph continues to consume the stable JSON query
+output rather than enabling version-specific result modes.
+
+1. Semantic related-note suggestions:
+
+   ```dotenv
+   WIKI_SEMANTIC_LINKS=true
+   WIKI_SEMANTIC_BACKEND=qmd
+   WIKI_QMD_COLLECTION=cursor
+   ```
+
+2. Refreshing the local QMD index after compilation:
+
+   ```dotenv
+   WIKI_QMD_REFRESH=true
+   ```
+
+`WIKI_QMD_REFRESH` is off by default. It runs `qmd update` and `qmd embed`
+after wiki files are written. Do not confuse this refresh with the QMD
+semantic-link backend; they are separate paths.
+
+## Lint and fix
+
+Run checks without compiling:
+
+```bash
+uv run wiki-langgraph lint
+uv run wiki-langgraph lint --strict
+```
+
+Lint checks for:
+
+- unresolved `[[wikilinks]]` in raw notes
+- orphan notes with no outgoing authored internal links
+- raw notes newer than their compiled output
+- drift in `index.md`
+- missing OKF `type` frontmatter
+- file read errors
+
+To clean unresolved raw wikilinks, preview first:
+
+```bash
+uv run wiki-langgraph lint --fix --dry-run
+uv run wiki-langgraph lint --fix
+```
+
+By default, `--fix` tries one unambiguous fuzzy match and turns anything still
+broken into plain text. Other modes are available:
+
+```bash
+uv run wiki-langgraph lint --fix --fix-mode strip    # plain text only
+uv run wiki-langgraph lint --fix --fix-mode rewrite  # fuzzy rewrites only
+```
+
+Fixes edit raw Markdown, not generated wiki files. Run `wiki-langgraph run`
+afterward to regenerate the wiki.
+
+## Configuration
+
+Settings use the `WIKI_` environment prefix and load an optional `.env` file
+from the current working directory. Copy the example file to get started:
+
+```bash
+cp .env.example .env
+```
+
+### Paths and output
+
+| Variable | Default / purpose |
+| --- | --- |
+| `WIKI_DATA_RAW_DIR` | Raw input root; defaults to `data/raw`. |
+| `WIKI_DATA_WIKI_DIR` | Generated wiki root; defaults to `data/wiki`. |
+| `WIKI_OUTPUT_PROFILE` | `okf` by default, or `obsidian` for legacy output. |
+| `WIKI_MANIFEST_PATH` | Optional incremental manifest override. |
+| `WIKI_LINT_ON_RUN` | `true` by default; set `false` to skip lint after `run`. |
+
+If the wiki directory is inside the raw directory, it is excluded from ingest
+so generated pages do not become raw input. The generated registry is always
+lowercase `index.md`; a legacy `Index.md` is migrated before writing.
+
+### OpenAI-compatible chat endpoint
 
 | Variable | Purpose |
-| -------- | ------- |
-| `WIKI_GRAPH_INGEST_TIMEOUT_SEC` | LangGraph timeout for the ingest node. |
-| `WIKI_GRAPH_COMPILE_TIMEOUT_SEC` | LangGraph timeout for compile, including optional local LLM authoring. Default is intentionally high. |
-| `WIKI_GRAPH_INDEX_TIMEOUT_SEC` | LangGraph timeout for the index node, including optional QMD refresh/embed. |
-| `WIKI_GRAPH_LINT_TIMEOUT_SEC` | LangGraph timeout for vault lint. |
-
-### Lint, logging, skills
-
-| Variable                            | Purpose                                                                                                                                                                     |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WIKI_LINT_ON_RUN`                  | If `true`, run the same checks as `wiki-langgraph lint` after the index step; any issue fails `run` with exit **1**.                                                        |
-| `WIKI_LOG_FILE`, `WIKI_LOG_LEVEL`   | Optional file logging; `DEBUG` adds verbose compile detail.                                                                                                                 |
-| `WIKI_OBSIDIAN_MARKDOWN_SKILL_PATH` | Optional path to a custom `SKILL.md` for OFM system text; otherwise the bundled package skill is used (or a repo-level `skills/obsidian-markdown/SKILL.md` if you add one). |
-
-For semantics of compile steps and provenance (`compiled_from:`, backlinks vs semantic footers), see **docs/ARCHITECTURE.md** and **AGENTS.md**.
-
-## Link provenance
-
-The generated wiki intentionally keeps three graph concepts separate:
-
-| Section | Meaning |
 | --- | --- |
-| `See also` | Outbound semantic suggestions from this note to related notes. |
-| `Backlinks` | Inbound authored links from other note bodies. Generated `See also` blocks are not counted here. |
-| `Related (semantic)` | Inbound semantic suggestions from other notes. These are recommendations, not authored citations. |
+| `WIKI_OPENAI_API_BASE` | Required for `query`, `research`, LLM authoring, and LLM semantic links. |
+| `WIKI_OPENAI_API_KEY` | API key; local servers commonly ignore it. |
+| `WIKI_LLM_MODEL` | Model identifier; defaults to `local`. |
+| `WIKI_LLM_REQUEST_TIMEOUT_SEC` | Per-request timeout; defaults to 300 seconds. |
 
-This separation prevents machine-suggested relatedness from being mistaken for human/authored evidence.
+### LLM authoring
 
-## Deep Agents
+| Variable | Purpose |
+| --- | --- |
+| `WIKI_LLM_COMPILE` | Rewrite changed raw notes with the chat model. Default `false`. |
+| `WIKI_LLM_COMPILE_INCREMENTAL` | Re-author only changed notes. Default `true`. |
+| `WIKI_LLM_COMPILE_ENRICH` | Merge new source into an existing note instead of replacing it. |
+| `WIKI_LLM_COMPILE_MAX_WORKERS` | Authoring concurrency. Default `1`. |
+| `WIKI_LLM_COMPILE_REVIEW` | `off`, `risky`, or `all`. |
+| `WIKI_OBSIDIAN_MARKDOWN_SKILL_PATH` | Optional custom Markdown/Obsidian instructions for LLM authoring. |
 
-`deep_agent.create_wiki_deep_agent` is available for agent workflows outside the batch compile. It uses the configured chat model, a filesystem backend rooted at the project, bundled/project skills under `/skills/`, `AGENTS.md` memory when present, and filesystem permissions that deny access to `.env`, `.git`, `.codegraph`, and internal agent artifact paths.
+### Langfuse tracing
 
-The main CLI query and research paths currently use direct LangChain flows for predictability. Deep Agents are available through the explicit `agent --deep-review` path for read-only candidate review; they are not part of normal batch compilation.
+When the three project variables below are configured, wiki-langgraph sends
+v4 observations to the local or remote Langfuse server. The integration uses
+the Langfuse Python SDK v4 and LangChain callback handler, so a wiki.run
+trace contains the ingest, compile, index, and lint steps plus nested LLM
+generations from authoring, semantic links, queries, research, and Deep Agents. Query and research
+retrieval is recorded as a `RETRIEVER` observation with the selected source paths.
+Tracing is disabled automatically when the keys are absent.
 
-## Layout
+| Variable | Purpose |
+| --- | --- |
+| LANGFUSE_PUBLIC_KEY | Langfuse project public key. |
+| LANGFUSE_SECRET_KEY | Langfuse project secret key; keep it out of Git. |
+| LANGFUSE_BASE_URL | Langfuse API base URL, for example http://localhost:3300. |
+| LANGFUSE_TRACING_ENABLED | Enable/disable tracing; defaults to false to avoid accidental data export. |
+| LANGFUSE_TRACING_ENVIRONMENT | Optional environment label, such as development. |
+| LANGFUSE_TRACING_RELEASE | Optional release label for comparing runs. |
+| OTEL_SERVICE_NAME | OpenTelemetry service name; defaults to `wiki-langgraph`. |
 
-| Path                  | Role                                             |
-| --------------------- | ------------------------------------------------ |
-| `data/raw/`           | Source files to ingest (default raw root)        |
-| `data/wiki/`          | Compiled vault output (default wiki root)        |
-| `Queries/`            | Raw saved-query notes when `query --save` is used |
-| `Research/`           | Raw saved research briefs when `research --save` is used |
-| `src/wiki_langgraph/` | Package (graph, nodes, linking, lint, LLM hooks) |
-| `AGENTS.md`           | Agent-facing project notes                       |
+Short-lived query, research, and evaluation commands explicitly flush the SDK exporter before
+returning. Open the Langfuse Traces view at http://localhost:3300 to
+inspect the resulting observation tree.
 
-## Tests
+### Semantic links and QMD tuning
+
+| Variable | Purpose |
+| --- | --- |
+| `WIKI_SEMANTIC_LINKS` | Enable semantic related-note suggestions. Default `false`. |
+| `WIKI_SEMANTIC_BACKEND` | `llm` or `qmd`. |
+| `WIKI_QMD_BIN` | QMD executable; defaults to `qmd`. |
+| `WIKI_QMD_COLLECTION` | QMD collection name. |
+| `WIKI_QMD_MIN_SCORE` | Minimum relatedness score; default `0.35`. |
+| `WIKI_QMD_TOP_N` | Number of QMD results to consider; default `10`. |
+| `WIKI_QMD_CANDIDATE_LIMIT` | Candidate breadth; default `40`. |
+| `WIKI_QMD_NO_RERANK` | Skip reranking for faster CPU-friendly queries. |
+| `WIKI_QMD_QUERY_TIMEOUT_SEC` | Semantic query timeout; default `120` seconds. |
+| `WIKI_QMD_REFRESH` | Run `qmd update` and `qmd embed` after compile. Default `false`. |
+| `WIKI_QMD_REFRESH_TIMEOUT_SEC` | Refresh timeout; default `600` seconds. |
+| `WIKI_QMD_CHUNK_STRATEGY` | `regex` or `auto`. |
+| `WIKI_QMD_CPU_ONLY` | Disable GPU use for QMD when GPU initialization fails. |
+
+Graph node timeouts are configurable with
+`WIKI_GRAPH_INGEST_TIMEOUT_SEC`, `WIKI_GRAPH_COMPILE_TIMEOUT_SEC`,
+`WIKI_GRAPH_INDEX_TIMEOUT_SEC`, and `WIKI_GRAPH_LINT_TIMEOUT_SEC`.
+
+All available settings and example values are listed in [`.env.example`](.env.example).
+
+## How it works
+
+The normal pipeline is:
+
+```text
+1. Ingest       discover raw Markdown recursively
+2. Compile      write linked notes and regenerate index.md
+3. Index        optionally refresh QMD
+4. Lint         report errors and warnings
+```
+
+The compiled wiki preserves provenance with `compiled_from:` frontmatter and
+adds OKF `type: Note` frontmatter to concept notes. Generated navigation uses
+standard Markdown links in the default OKF profile.
+
+For the complete node graph, manifest behavior, semantic-link flow, and module
+map, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Project layout
+
+```text
+data/raw/                 source Markdown
+data/wiki/                generated wiki
+data/.wiki-langgraph/     manifest and review candidates
+src/wiki_langgraph/       package implementation
+tests/                    pytest suite
+docs/ARCHITECTURE.md      detailed pipeline design
+.env.example              configuration reference
+```
+
+## Development
+
+Run the test suite with:
 
 ```bash
 uv run pytest
 ```
+
+Run focused tests while changing a subsystem, for example:
+
+```bash
+uv run pytest tests/test_linking.py
+uv run pytest tests/test_lint.py
+uv run pytest tests/test_query.py
+```
+
+## Background
+
+This project implements part of the “LLM Wiki” pattern: instead of retrieving
+chunks only at question time, maintain a persistent, interlinked Markdown wiki
+whose structure and synthesis compound over time. The idea was described by
+[Andrej Karpathy](https://x.com/karpathy/status/2039805659525644595) and in
+his [idea file](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
 ## License
 

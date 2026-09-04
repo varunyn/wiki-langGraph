@@ -1,0 +1,157 @@
+{
+  "name": "wiki-langgraph-research-v1",
+  "description": "Initial evaluation cases for synthesizing curated project-session notes into grounded research briefs.",
+  "metadata": {
+    "project": "wiki-langgraph",
+    "corpus": "curated-session-notes",
+    "version": 1,
+    "task": "wiki.research"
+  },
+  "items": [
+    {
+      "id": "research-eval-001",
+      "input": {
+        "question": "How should this application turn structured session notes into a meaningful Langfuse evaluation dataset for research quality?",
+        "source_notes": [
+          "Research Brief - Session Notes to Langfuse Evals",
+          "Langfuse Tracing and Evaluation Direction",
+          "Operational Lessons for Session Notes"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Start with wiki.research synthesis rather than deterministic ingestion.",
+          "Use structured notes with decisions, evidence, gaps, and source session IDs.",
+          "Combine deterministic grounding and structure checks with model-based quality grading.",
+          "Keep evaluation separate from automated approval workflows."
+        ],
+        "gaps": [
+          "The initial dataset size and score thresholds are not yet finalized."
+        ]
+      },
+      "metadata": {
+        "category": "evaluation-strategy",
+        "source_session_ids": [
+          "019fb531-af9f-7b42-8cd3-3227285f7db3",
+          "019fa6ae-99fb-7b01-ab29-51607e81719a"
+        ]
+      }
+    },
+    {
+      "id": "research-eval-002",
+      "input": {
+        "question": "What should a durable session-research note contain, and why is it better than storing raw transcripts?",
+        "source_notes": [
+          "Operational Lessons for Session Notes",
+          "Wiki Pipeline and OKF Evolution",
+          "Research Brief - Session Notes to Langfuse Evals"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Use metadata such as note type, project, status, tags, and source session IDs.",
+          "Organize content into summary, decisions, implementation or evidence, open questions, and follow-ups.",
+          "Curated notes improve retrieval, provenance, and evaluation explainability.",
+          "Secrets and raw environment values must not be copied into notes."
+        ],
+        "gaps": [
+          "The project has not yet decided whether every manually authored note requires a source session ID."
+        ]
+      },
+      "metadata": {
+        "category": "corpus-design",
+        "source_session_ids": [
+          "019fa6ae-99fb-7b01-ab29-51607e81719a",
+          "019fb531-af9f-7b42-8cd3-3227285f7db3"
+        ]
+      }
+    },
+    {
+      "id": "research-eval-003",
+      "input": {
+        "question": "How should LangGraph and Deep Agents be divided in this application, and what does that imply for evaluation?",
+        "source_notes": [
+          "Bounded Agentic Workflow Architecture",
+          "Wiki Pipeline and OKF Evolution",
+          "Langfuse Tracing and Evaluation Direction"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "LangGraph owns deterministic ingest, compile, index, lint, and bounded control flow.",
+          "Deep Agents are opt-in for open-ended research or read-only review.",
+          "The agent loop is bounded by inspect, plan, act, verify, and replan iterations.",
+          "Evaluation should provide feedback without silently approving content."
+        ],
+        "gaps": [
+          "It remains undecided whether research evaluation should run inside the bounded loop or as a separate experiment."
+        ]
+      },
+      "metadata": {
+        "category": "architecture",
+        "source_session_ids": [
+          "019fa6ae-99fb-7b01-ab29-51607e81719a",
+          "019fb531-af9f-7b42-8cd3-3227285f7db3"
+        ]
+      }
+    },
+    {
+      "id": "research-eval-004",
+      "input": {
+        "question": "What operational safeguards are needed to run repeatable research experiments over this wiki corpus?",
+        "source_notes": [
+          "Operational Lessons for Session Notes",
+          "Wiki Pipeline and OKF Evolution",
+          "Langfuse Tracing and Evaluation Direction"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Keep raw and compiled directories isolated in tests and deliberate in experiment runs.",
+          "Use deterministic low-cost settings while curating the corpus.",
+          "Track commits, test results, corpus version, and source session IDs.",
+          "Keep secrets out of notes and verify the configured endpoint and model before running."
+        ],
+        "gaps": [
+          "A formal corpus-versioning and experiment-run naming convention still needs to be finalized."
+        ]
+      },
+      "metadata": {
+        "category": "operations",
+        "source_session_ids": [
+          "019fa6ae-99fb-7b01-ab29-51607e81719a",
+          "019fb531-af9f-7b42-8cd3-3227285f7db3"
+        ]
+      }
+    },
+    {
+      "id": "research-eval-005",
+      "input": {
+        "question": "What should the first Langfuse research experiment measure, and what should happen after the baseline run?",
+        "source_notes": [
+          "Langfuse Tracing and Evaluation Direction",
+          "Research Brief - Session Notes to Langfuse Evals",
+          "Operational Lessons for Session Notes"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Run a small dataset through wiki.research using the existing trace hierarchy.",
+          "Measure grounding, expected-theme coverage, response structure, usefulness, and uncertainty handling.",
+          "Inspect failed examples in Langfuse before setting blocking thresholds.",
+          "Record dataset and evaluator identifiers for reproducibility."
+        ],
+        "gaps": [
+          "The first five-to-ten questions and pass thresholds still require review."
+        ]
+      },
+      "metadata": {
+        "category": "experiment-plan",
+        "source_session_ids": [
+          "019fb531-af9f-7b42-8cd3-3227285f7db3",
+          "019fa6ae-99fb-7b01-ab29-51607e81719a"
+        ]
+      }
+    }
+  ]
+}

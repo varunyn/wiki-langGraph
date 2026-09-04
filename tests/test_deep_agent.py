@@ -70,7 +70,10 @@ def test_chat_model_from_settings_passes_expected_chatopenai_kwargs(tmp_path: Pa
         llm_request_timeout_sec=99.0,
     )
 
-    with patch("wiki_langgraph.deep_agent.ChatOpenAI", FakeChatOpenAI):
+    with (
+        patch("wiki_langgraph.deep_agent.ChatOpenAI", FakeChatOpenAI),
+        patch("wiki_langgraph.deep_agent.langfuse_callback", return_value=None),
+    ):
         chat_model_from_settings(cfg)
 
     assert captured == {
@@ -79,6 +82,25 @@ def test_chat_model_from_settings_passes_expected_chatopenai_kwargs(tmp_path: Pa
         "request_timeout": 99.0,
         "base_url": "http://127.0.0.1:11434/v1",
     }
+
+
+def test_chat_model_from_settings_attaches_callback_without_wrapping(tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    callback = object()
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    cfg = Settings(project_root=tmp_path, llm_model="test")
+    with (
+        patch("wiki_langgraph.deep_agent.ChatOpenAI", FakeChatOpenAI),
+        patch("wiki_langgraph.deep_agent.langfuse_callback", return_value=callback),
+    ):
+        model = chat_model_from_settings(cfg)
+
+    assert type(model).__name__ == "FakeChatOpenAI"
+    assert captured["callbacks"] == [callback]
 
 
 def test_create_wiki_deep_agent_passes_expected_factory_kwargs(tmp_path: Path) -> None:

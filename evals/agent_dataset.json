@@ -1,0 +1,53 @@
+{
+  "name": "wiki-langgraph-agent-v1",
+  "description": "Fixture cases for evaluating the bounded inspect, plan, LangGraph, verify, and replan workflow.",
+  "metadata": {
+    "project": "wiki-langgraph",
+    "task": "agent",
+    "version": 1
+  },
+  "items": [
+    {
+      "id": "agent-eval-001",
+      "input": {
+        "scenario": "A clean two-note workspace should compile and stop after verification.",
+        "fixture": "evals/fixtures/agent/clean"
+      },
+      "expectedOutput": {
+        "plan_action": "compile_and_verify",
+        "verification": "passed",
+        "next_action": "stop",
+        "max_iterations": 1
+      },
+      "metadata": {"category": "clean-completion"}
+    },
+    {
+      "id": "agent-eval-002",
+      "input": {
+        "scenario": "An unresolved wikilink should be reported and stop for human review.",
+        "fixture": "evals/fixtures/agent/unresolved-link"
+      },
+      "expectedOutput": {
+        "plan_action": "compile_and_verify",
+        "verification": "passed",
+        "next_action": "stop_for_review",
+        "max_iterations": 1
+      },
+      "metadata": {"category": "warning-review"}
+    },
+    {
+      "id": "agent-eval-003",
+      "input": {
+        "scenario": "An empty workspace should stop safely without running the graph.",
+        "fixture": "evals/fixtures/agent/empty"
+      },
+      "expectedOutput": {
+        "plan_action": "stop",
+        "verification": "not_run",
+        "next_action": "stop",
+        "max_iterations": 0
+      },
+      "metadata": {"category": "safe-stop"}
+    }
+  ]
+}

@@ -8,6 +8,7 @@ from typing import TypedDict
 
 from wiki_langgraph.config import Settings
 from wiki_langgraph.linking import wikilink_display_name
+from wiki_langgraph.observability import invoke_with_optional_callback
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,11 @@ def suggest_semantic_related(
             llm_kwargs["base_url"] = settings.openai_api_base
         llm = llm_factory(**llm_kwargs)
         structured_llm = llm.with_structured_output(SemanticRelatedOutput)
-        data = structured_llm.invoke([SystemMessage(content=system), HumanMessage(content=human)])
+        data = invoke_with_optional_callback(
+            structured_llm,
+            [SystemMessage(content=system), HumanMessage(content=human)],
+            settings,
+        )
         raw_list = _structured_related(data)
         if not isinstance(raw_list, list):
             return []

@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 from wiki_langgraph.config import Settings
 from wiki_langgraph.linking import wikilink_display_name
 from wiki_langgraph.llm_author import _message_text
+from wiki_langgraph.observability import finish_trace, invoke_with_optional_callback, trace_operation
 
 MAX_EXCERPT_CHARS = 2_400
 
@@ -119,8 +120,12 @@ def _research_prompt(question: str, sources: list[QuerySource]) -> list[object]:
     system = (
         "Create research briefs from supplied Obsidian wiki context. "
         "Synthesize across notes instead of answering narrowly. "
+        "Answer every material part of the research question. "
         "Use wikilinks with exact source-note titles for concrete claims. "
+        "Every Key Findings bullet must include at least one exact source wikilink. "
         "Separate evidence-backed findings from gaps or open questions. "
+        "When the context discusses evaluation governance, explicitly state approval boundaries "
+        "and what failures should be inspected before setting thresholds. "
         "If the context is insufficient, make the limitation explicit."
     )
     human = (
@@ -140,36 +145,72 @@ def _research_prompt(question: str, sources: list[QuerySource]) -> list[object]:
 
 def answer_query(question: str, *, settings: Settings, top_k: int = 5) -> QueryResult:
     """Retrieve wiki context and answer the question with the configured chat model."""
-    sources = search_wiki_context(question, settings=settings, top_k=top_k)
-    kwargs: dict[str, object] = {
-        "model": settings.llm_model,
-        "api_key": settings.openai_api_key,
-        "temperature": 0.2,
-        "request_timeout": settings.llm_request_timeout_sec,
-    }
-    if settings.openai_api_base:
-        kwargs["base_url"] = settings.openai_api_base
-    llm = ChatOpenAI(**kwargs)
-    msg = llm.invoke(_answer_prompt(question, sources))
-    answer = _message_text(msg).strip()
-    return QueryResult(question=question, answer=answer, sources=sources)
+    with trace_operation(
+        settings,
+        name="wiki.query",
+        input_data={"question": question},
+        root=True,
+    ) as span:
+        with trace_operation(
+            settings,
+            name="wiki.retrieve",
+            input_data={"question": question, "top_k": top_k},
+            observation_type="retriever",
+        ) as retrieval_span:
+            sources = search_wiki_context(question, settings=settings, top_k=top_k)
+            finish_trace(
+                retrieval_span,
+                output={"sources": [source.relpath for source in sources]},
+            )
+        kwargs: dict[str, object] = {
+            "model": settings.llm_model,
+            "api_key": settings.openai_api_key,
+            "temperature": 0.2,
+            "request_timeout": settings.llm_request_timeout_sec,
+        }
+        if settings.openai_api_base:
+            kwargs["base_url"] = settings.openai_api_base
+        llm = ChatOpenAI(**kwargs)
+        msg = invoke_with_optional_callback(llm, _answer_prompt(question, sources), settings)
+        answer = _message_text(msg).strip()
+        result = QueryResult(question=question, answer=answer, sources=sources)
+        finish_trace(span, output={"answer": answer, "source_count": len(sources)})
+        return result
 
 
 def research_query(question: str, *, settings: Settings, top_k: int = 8) -> QueryResult:
     """Retrieve broader wiki context and synthesize a structured research brief."""
-    sources = search_wiki_context(question, settings=settings, top_k=top_k)
-    kwargs: dict[str, object] = {
-        "model": settings.llm_model,
-        "api_key": settings.openai_api_key,
-        "temperature": 0.2,
-        "request_timeout": settings.llm_request_timeout_sec,
-    }
-    if settings.openai_api_base:
-        kwargs["base_url"] = settings.openai_api_base
-    llm = ChatOpenAI(**kwargs)
-    msg = llm.invoke(_research_prompt(question, sources))
-    brief = _message_text(msg).strip()
-    return QueryResult(question=question, answer=brief, sources=sources)
+    with trace_operation(
+        settings,
+        name="wiki.research",
+        input_data={"question": question},
+        root=True,
+    ) as span:
+        with trace_operation(
+            settings,
+            name="wiki.retrieve",
+            input_data={"question": question, "top_k": top_k},
+            observation_type="retriever",
+        ) as retrieval_span:
+            sources = search_wiki_context(question, settings=settings, top_k=top_k)
+            finish_trace(
+                retrieval_span,
+                output={"sources": [source.relpath for source in sources]},
+            )
+        kwargs: dict[str, object] = {
+            "model": settings.llm_model,
+            "api_key": settings.openai_api_key,
+            "temperature": 0.2,
+            "request_timeout": settings.llm_request_timeout_sec,
+        }
+        if settings.openai_api_base:
+            kwargs["base_url"] = settings.openai_api_base
+        llm = ChatOpenAI(**kwargs)
+        msg = invoke_with_optional_callback(llm, _research_prompt(question, sources), settings)
+        brief = _message_text(msg).strip()
+        result = QueryResult(question=question, answer=brief, sources=sources)
+        finish_trace(span, output={"answer": brief, "source_count": len(sources)})
+        return result
 
 
 def _slug_title(question: str) -> str:

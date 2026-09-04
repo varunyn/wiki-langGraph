@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from wiki_langgraph.manifest import default_manifest_path
@@ -313,6 +313,48 @@ class Settings(BaseSettings):
     log_level: str = Field(
         default="INFO",
         description="Log level for file logging: DEBUG, INFO, WARNING, ERROR.",
+    )
+
+    # Langfuse uses the unprefixed names below so the same `.env` works for the
+    # Python SDK, its LangChain callback handler, and the local v4 server.
+    langfuse_public_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LANGFUSE_PUBLIC_KEY", "WIKI_LANGFUSE_PUBLIC_KEY"),
+        repr=False,
+        description="Langfuse project public key; tracing is disabled when unset.",
+    )
+    langfuse_secret_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LANGFUSE_SECRET_KEY", "WIKI_LANGFUSE_SECRET_KEY"),
+        repr=False,
+        description="Langfuse project secret key; never commit this value.",
+    )
+    langfuse_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LANGFUSE_BASE_URL", "WIKI_LANGFUSE_BASE_URL"),
+        description="Langfuse API base URL, for example http://localhost:3300.",
+    )
+    langfuse_tracing_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("LANGFUSE_TRACING_ENABLED", "WIKI_LANGFUSE_TRACING_ENABLED"),
+        description="Enable Langfuse tracing when both project keys are configured; opt-in by default.",
+    )
+    langfuse_tracing_environment: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "LANGFUSE_TRACING_ENVIRONMENT", "WIKI_LANGFUSE_TRACING_ENVIRONMENT"
+        ),
+        description="Optional Langfuse environment label such as development or production.",
+    )
+    langfuse_tracing_release: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LANGFUSE_TRACING_RELEASE", "WIKI_LANGFUSE_TRACING_RELEASE"),
+        description="Optional Langfuse release label for comparing application versions.",
+    )
+    langfuse_service_name: str = Field(
+        default="wiki-langgraph",
+        validation_alias=AliasChoices("OTEL_SERVICE_NAME", "WIKI_LANGFUSE_SERVICE_NAME"),
+        description="OpenTelemetry service name attached to Langfuse observations.",
     )
 
     @field_validator("log_file", mode="before")

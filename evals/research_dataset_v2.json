@@ -1,0 +1,153 @@
+{
+  "name": "wiki-langgraph-research-v2",
+  "description": "Updated evaluation cases for grounded research after the v0.5 knowledge-gap review release.",
+  "metadata": {
+    "project": "wiki-langgraph",
+    "corpus": "curated-session-notes",
+    "version": 2,
+    "task": "wiki.research",
+    "baseline_predecessor": "wiki-langgraph-research-v1",
+    "status": "draft",
+    "requires_human_review": true
+  },
+  "items": [
+    {
+      "id": "research-v2-001",
+      "input": {
+        "question": "How should this application maintain repeatable Langfuse evaluations for research quality?",
+        "source_notes": [
+          "Research Brief - Session Notes to Langfuse Evals",
+          "Langfuse Evaluation Baseline and Trace Findings",
+          "Operational Lessons for Session Notes"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Keep versioned dataset definitions reviewable in the repository.",
+          "Use hosted datasets for comparable Langfuse experiment runs and local data for development.",
+          "Measure response structure, source grounding, theme coverage, and uncertainty.",
+          "Inspect exact traces and scores before accepting a run as a baseline."
+        ],
+        "gaps": [
+          "Blocking score thresholds still require calibration against reviewed examples."
+        ]
+      },
+      "metadata": {"category": "evaluation-strategy", "release": "v0.5.0"}
+    },
+    {
+      "id": "research-v2-002",
+      "input": {
+        "question": "What should a durable session-research note contain, and why should raw transcripts remain outside the wiki corpus?",
+        "source_notes": [
+          "Operational Lessons for Session Notes",
+          "Wiki Pipeline and OKF Evolution",
+          "Research Brief - Session Notes to Langfuse Evals"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Record purpose, decisions, evidence, verification, open questions, and follow-ups.",
+          "Preserve source session identifiers when available.",
+          "Curated notes improve retrieval, provenance, and evaluation explainability.",
+          "Exclude secrets, raw environment values, and uncurated transcripts."
+        ],
+        "gaps": [
+          "Not every manually authored note has a stable source session identifier."
+        ]
+      },
+      "metadata": {"category": "corpus-design", "release": "v0.5.0"}
+    },
+    {
+      "id": "research-v2-003",
+      "input": {
+        "question": "How are LangGraph, the bounded agent, Deep Agents, and knowledge-gap review divided in this application?",
+        "source_notes": [
+          "Bounded Agentic Workflow Architecture",
+          "Wiki Pipeline and OKF Evolution",
+          "Agent Evaluation Fixtures and Findings"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "LangGraph owns deterministic ingest, compile, index, and lint execution.",
+          "The bounded agent performs inspect, plan, act, verify, and replan with an iteration limit.",
+          "Deep Agents remain opt-in, read-only reviewers rather than part of normal compilation.",
+          "Knowledge-gap review is advisory and does not approve candidates or mutate the corpus."
+        ],
+        "gaps": [
+          "Knowledge-gap finding quality still needs dataset-backed calibration."
+        ]
+      },
+      "metadata": {"category": "architecture", "release": "v0.5.0"}
+    },
+    {
+      "id": "research-v2-004",
+      "input": {
+        "question": "Which safeguards make wiki research and agent experiments reproducible?",
+        "source_notes": [
+          "Operational Lessons for Session Notes",
+          "Langfuse Tracing and Evaluation Direction",
+          "Agent Evaluation Fixtures and Findings"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Pin the corpus root and isolate raw and compiled directories.",
+          "Use temporary fixture workspaces for agent evaluations.",
+          "Record dataset version, experiment name, model, commit, and source identifiers.",
+          "Keep generated outputs outside the source corpus to prevent retrieval contamination."
+        ],
+        "gaps": [
+          "Continuous integration regression thresholds have not been finalized."
+        ]
+      },
+      "metadata": {"category": "operations", "release": "v0.5.0"}
+    },
+    {
+      "id": "research-v2-005",
+      "input": {
+        "question": "How should results from ongoing Langfuse experiments be interpreted after the initial baseline?",
+        "source_notes": [
+          "Langfuse Evaluation Baseline and Trace Findings",
+          "Langfuse Tracing and Evaluation Direction",
+          "Research Brief - Session Notes to Langfuse Evals"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Compare runs only when dataset, corpus, model, and configuration are known.",
+          "Treat configuration failures and wrong-model runs as diagnostics rather than baselines.",
+          "Inspect failed items and nested observations before changing prompts or thresholds.",
+          "Retain older dataset versions so historical comparisons remain meaningful."
+        ],
+        "gaps": [
+          "A calibrated human-reviewed acceptance threshold is not yet available."
+        ]
+      },
+      "metadata": {"category": "experiment-analysis", "release": "v0.5.0"}
+    },
+    {
+      "id": "research-v2-006",
+      "input": {
+        "question": "What evidence and safety properties should a trustworthy knowledge-gap review demonstrate?",
+        "source_notes": [
+          "Agent Evaluation Fixtures and Findings",
+          "Bounded Agentic Workflow Architecture",
+          "Wiki Pipeline and OKF Evolution"
+        ]
+      },
+      "expectedOutput": {
+        "themes": [
+          "Findings should cite inspected allowlisted files and affected logical paths.",
+          "Duplicate or conflict claims require evidence from multiple notes and explicit uncertainty.",
+          "Review scope and omitted notes must be visible when coverage is partial.",
+          "The review must not write notes, manifests, indexes, or candidate decisions."
+        ],
+        "gaps": [
+          "Category-level precision and recall need calibration on curated fixtures."
+        ]
+      },
+      "metadata": {"category": "knowledge-gap-review", "release": "v0.5.0"}
+    }
+  ]
+}

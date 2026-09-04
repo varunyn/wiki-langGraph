@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 
 from wiki_langgraph.config import Settings, load_settings
 from wiki_langgraph.nodes import node_compile_wiki, node_index, node_ingest, node_lint
+from wiki_langgraph.observability import finish_trace, trace_operation
 from wiki_langgraph.state import WikiGraphState
 
 
@@ -28,16 +29,28 @@ def build_graph(settings: Settings | None = None):
     cfg = settings or load_settings()
 
     async def ingest_wrapper(state: WikiGraphState) -> dict[str, object]:
-        return await asyncio.to_thread(node_ingest, state, settings=cfg)
+        with trace_operation(cfg, name="wiki.ingest") as span:
+            result = await asyncio.to_thread(node_ingest, state, settings=cfg)
+            finish_trace(span, output={"raw_uri_count": len(result.get("raw_uris", []))})
+            return result
 
     async def compile_wrapper(state: WikiGraphState) -> dict[str, object]:
-        return await asyncio.to_thread(node_compile_wiki, state, settings=cfg)
+        with trace_operation(cfg, name="wiki.compile") as span:
+            result = await asyncio.to_thread(node_compile_wiki, state, settings=cfg)
+            finish_trace(span, output={"step": "compile_wiki"})
+            return result
 
     async def index_wrapper(state: WikiGraphState) -> dict[str, object]:
-        return await asyncio.to_thread(node_index, state, settings=cfg)
+        with trace_operation(cfg, name="wiki.index") as span:
+            result = await asyncio.to_thread(node_index, state, settings=cfg)
+            finish_trace(span, output={"index_md_written": result.get("index_md_written", False)})
+            return result
 
     async def lint_wrapper(state: WikiGraphState) -> dict[str, object]:
-        return await asyncio.to_thread(node_lint, state, settings=cfg)
+        with trace_operation(cfg, name="wiki.lint") as span:
+            result = await asyncio.to_thread(node_lint, state, settings=cfg)
+            finish_trace(span, output={"step": "lint"})
+            return result
 
     workflow = StateGraph(WikiGraphState)
     workflow.add_node(
@@ -80,6 +93,7 @@ def run_once(
     lint_strict: bool | None = None,
 ) -> WikiGraphState:
     """Execute ingest → compile → index → lint once with optional LLM selection."""
+    cfg = settings or load_settings()
     app = build_graph(settings=settings)
     initial: WikiGraphState = {
         "step_log": [],
@@ -93,4 +107,21 @@ def run_once(
         initial["llm_limit"] = llm_limit
     if lint_strict is not None:
         initial["lint_strict"] = lint_strict
-    return cast(WikiGraphState, asyncio.run(app.ainvoke(initial)))
+    with trace_operation(
+        cfg,
+        name="wiki.run",
+        input_data={
+            "llm_only": initial.get("llm_only", []),
+            "llm_limit": initial.get("llm_limit"),
+        },
+        root=True,
+    ) as span:
+        result = cast(WikiGraphState, asyncio.run(app.ainvoke(initial)))
+        finish_trace(
+            span,
+            output={
+                "last_error": result.get("last_error"),
+                "index_md_written": result.get("index_md_written", False),
+            },
+        )
+        return result

@@ -15,6 +15,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph.state import CompiledStateGraph
 
 from wiki_langgraph.config import Settings, load_settings
+from wiki_langgraph.observability import langfuse_callback
 
 
 def bundled_skills_dir() -> Path:
@@ -42,13 +43,16 @@ def wiki_filesystem_backend(settings: Settings) -> CompositeBackend | Filesystem
 
 def chat_model_from_settings(settings: Settings) -> ChatOpenAI:
     """Build a :class:`~langchain_openai.ChatOpenAI` from wiki settings (Ollama, OpenAI, etc.)."""
-    kwargs: dict[str, str | float] = {
+    kwargs: dict[str, object] = {
         "model": settings.llm_model,
         "api_key": settings.openai_api_key,
         "request_timeout": settings.llm_request_timeout_sec,
     }
     if settings.openai_api_base:
         kwargs["base_url"] = settings.openai_api_base
+    callback = langfuse_callback(settings)
+    if callback is not None:
+        kwargs["callbacks"] = [callback]
     return ChatOpenAI(**kwargs)
 
 
