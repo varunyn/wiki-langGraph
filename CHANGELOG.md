@@ -1,3 +1,20 @@
+## [Unreleased]
+
+### Changed
+
+- Kept the reviewed research-v1 dataset as the hosted default and marked new research and
+  knowledge-gap datasets as local drafts pending human review.
+- Expanded knowledge-gap evaluation to six failure modes and added category precision, recall,
+  F1, exact review-scope, safety, and bound scores; running these cases requires a model/provider
+  with reliable tool-calling and structured-output support.
+- Added hosted dataset version selection, explicit Langfuse flushing, retrieval observations, a
+  stable telemetry service name, and Langfuse 4.15.1.
+
+## 2026-09-03
+
+- Added a post-v0.5 research dataset while preserving the original baseline, plus an executable
+  knowledge-gap evaluation dataset with isolated fixtures and deterministic safety scores.
+
 ## 2026-08-31
 
 - Added bounded, evidence-backed `review gaps` analysis that reuses the existing read-only

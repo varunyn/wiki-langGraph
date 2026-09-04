@@ -351,6 +351,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LANGFUSE_TRACING_RELEASE", "WIKI_LANGFUSE_TRACING_RELEASE"),
         description="Optional Langfuse release label for comparing application versions.",
     )
+    langfuse_service_name: str = Field(
+        default="wiki-langgraph",
+        validation_alias=AliasChoices("OTEL_SERVICE_NAME", "WIKI_LANGFUSE_SERVICE_NAME"),
+        description="OpenTelemetry service name attached to Langfuse observations.",
+    )
 
     @field_validator("log_file", mode="before")
     @classmethod

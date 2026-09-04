@@ -20,7 +20,11 @@ from wiki_langgraph.agentic import (
 )
 from wiki_langgraph.config import Settings, load_settings
 from wiki_langgraph.deep_review import review_candidates
-from wiki_langgraph.evaluation import run_agent_experiment, run_research_experiment
+from wiki_langgraph.evaluation import (
+    run_agent_experiment,
+    run_knowledge_gap_experiment,
+    run_research_experiment,
+)
 from wiki_langgraph.graph import run_once
 from wiki_langgraph.knowledge_gap_review import review_knowledge_gaps
 from wiki_langgraph.lint import fix_unresolved_wikilinks, run_lint
@@ -32,6 +36,7 @@ from wiki_langgraph.nodes import (
     select_llm_compile_relpaths,
 )
 from wiki_langgraph.query import answer_query, research_query, save_query_answer, save_research_brief
+from wiki_langgraph.observability import flush_langfuse
 from wiki_langgraph.review_queue import candidate_root
 
 
@@ -290,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
         "--dataset",
         type=Path,
         default=Path("evals/research_dataset.json"),
-        help="Local evaluation dataset JSON path (default: evals/research_dataset.json)",
+        help="Dataset definition JSON path (default: evals/research_dataset.json)",
     )
     eval_p.add_argument(
         "--name",
@@ -309,6 +314,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Run the local JSON items instead of fetching the hosted Langfuse dataset",
     )
     eval_p.add_argument(
+        "--dataset-version",
+        default=None,
+        help="Hosted dataset version as an ISO 8601 timestamp with timezone",
+    )
+    eval_p.add_argument(
         "--corpus-root",
         type=Path,
         default=Path("."),
@@ -324,7 +334,36 @@ def main(argv: list[str] | None = None) -> int:
     )
     agent_eval_p.add_argument("--name", default=None, help="Override the Langfuse experiment name")
     agent_eval_p.add_argument("--max-concurrency", type=int, default=1)
+    agent_eval_p.add_argument(
+        "--dataset-version",
+        default=None,
+        help="Hosted dataset version as an ISO 8601 timestamp with timezone",
+    )
     agent_eval_p.add_argument("--corpus-root", type=Path, default=Path("."))
+
+    gap_eval_p = sub.add_parser(
+        "gap-eval",
+        help="Run read-only knowledge-gap fixture evaluations through Langfuse",
+    )
+    gap_eval_p.add_argument(
+        "--dataset",
+        type=Path,
+        default=Path("evals/knowledge_gap_dataset.json"),
+        help="Knowledge-gap dataset JSON path (default: evals/knowledge_gap_dataset.json)",
+    )
+    gap_eval_p.add_argument("--name", default=None, help="Override the Langfuse experiment name")
+    gap_eval_p.add_argument("--max-concurrency", type=int, default=1)
+    gap_eval_p.add_argument(
+        "--hosted",
+        action="store_true",
+        help="Fetch the hosted dataset instead of running the local draft fixtures",
+    )
+    gap_eval_p.add_argument(
+        "--dataset-version",
+        default=None,
+        help="Hosted dataset version as an ISO 8601 timestamp with timezone",
+    )
+    gap_eval_p.add_argument("--corpus-root", type=Path, default=Path("."))
 
     review_p = sub.add_parser(
         "review",
@@ -497,6 +536,7 @@ def main(argv: list[str] | None = None) -> int:
                 settings=settings,
             )
             print(f"\nsaved: {saved}")
+        flush_langfuse(settings)
         return 0
 
     if args.command == "research":
@@ -518,6 +558,7 @@ def main(argv: list[str] | None = None) -> int:
                 settings=settings,
             )
             print(f"\nsaved: {saved}")
+        flush_langfuse(settings)
         return 0
 
     if args.command == "eval":
@@ -539,12 +580,15 @@ def main(argv: list[str] | None = None) -> int:
                 name=args.name,
                 max_concurrency=args.max_concurrency,
                 hosted=not args.local,
+                dataset_version=args.dataset_version,
             )
         except (RuntimeError, ValueError) as exc:
+            flush_langfuse(settings)
             print(f"eval failed: {exc}", file=sys.stderr)
             return 1
         formatter = getattr(result, "format", None)
         print(formatter() if callable(formatter) else result)
+        flush_langfuse(settings)
         return 0
 
     if args.command == "agent-eval":
@@ -565,12 +609,45 @@ def main(argv: list[str] | None = None) -> int:
                 dataset_path=args.dataset,
                 name=args.name,
                 max_concurrency=args.max_concurrency,
+                dataset_version=args.dataset_version,
             )
         except (RuntimeError, ValueError) as exc:
+            flush_langfuse(settings)
             print(f"agent-eval failed: {exc}", file=sys.stderr)
             return 1
         formatter = getattr(result, "format", None)
         print(formatter() if callable(formatter) else result)
+        flush_langfuse(settings)
+        return 0
+
+    if args.command == "gap-eval":
+        if args.max_concurrency < 1:
+            parser.error("gap-eval --max-concurrency must be at least 1")
+        corpus_root = args.corpus_root.resolve()
+        settings = load_settings().model_copy(
+            update={
+                "project_root": corpus_root,
+                "data_raw_dir": corpus_root / "data/raw",
+                "data_wiki_dir": corpus_root / "data/wiki",
+            }
+        )
+        configure_logging(settings)
+        try:
+            result = run_knowledge_gap_experiment(
+                settings=settings,
+                dataset_path=args.dataset,
+                name=args.name,
+                max_concurrency=args.max_concurrency,
+                hosted=args.hosted,
+                dataset_version=args.dataset_version,
+            )
+        except (RuntimeError, ValueError) as exc:
+            flush_langfuse(settings)
+            print(f"gap-eval failed: {exc}", file=sys.stderr)
+            return 1
+        formatter = getattr(result, "format", None)
+        print(formatter() if callable(formatter) else result)
+        flush_langfuse(settings)
         return 0
 
     if args.command == "review":

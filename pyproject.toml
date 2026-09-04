@@ -8,9 +8,8 @@ authors = [{ name = "wiki-langgraph contributors" }]
 requires-python = ">=3.12"
 dependencies = [
     "deepagents==0.6.4",
-    "langfuse>=4.7,<5",
+    "langfuse==4.15.1",
     "langchain-openai==1.2.2",
-    "langfuse>=4.7,<5",
     "langgraph>=1.1.6",
     "pydantic-settings>=2.13.1",
     "pyyaml>=6.0",

@@ -1,5 +1,6 @@
 """Tests for query and save-as-note workflow."""
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -75,6 +76,46 @@ def test_answer_query_calls_chat_model_with_context(tmp_path: Path) -> None:
     }
     human = captured["messages"][1]
     assert "RAG Failure Analysis Playbook.md" in human.content
+
+
+def test_answer_query_records_retrieval_observation(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    settings = _settings(tmp_path)
+    (settings.wiki_dir() / "Retrieval.md").write_text(
+        "# Retrieval\n\nBounded lexical retrieval.",
+        encoding="utf-8",
+    )
+    observations: list[dict[str, object]] = []
+
+    class FakeSpan:
+        def __init__(self, record: dict[str, object]) -> None:
+            self.record = record
+
+        def update(self, **kwargs: object) -> None:
+            self.record.update(kwargs)
+
+    @contextmanager
+    def fake_trace_operation(_settings: Settings, **kwargs: object):  # noqa: ANN202
+        record = dict(kwargs)
+        observations.append(record)
+        yield FakeSpan(record)
+
+    class FakeChatOpenAI:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def invoke(self, _messages: list[object]) -> SimpleNamespace:
+            return SimpleNamespace(text="Use [[Retrieval]].")
+
+    monkeypatch.setattr("wiki_langgraph.query.trace_operation", fake_trace_operation)
+    monkeypatch.setattr("wiki_langgraph.query.ChatOpenAI", FakeChatOpenAI)
+
+    answer_query("How is retrieval bounded?", settings=settings, top_k=2)
+
+    assert observations[0]["name"] == "wiki.query"
+    assert observations[0]["root"] is True
+    assert observations[1]["name"] == "wiki.retrieve"
+    assert observations[1]["observation_type"] == "retriever"
+    assert observations[1]["output"] == {"sources": ["Retrieval.md"]}
 
 
 def test_save_query_answer_writes_to_queries_folder(tmp_path: Path) -> None:

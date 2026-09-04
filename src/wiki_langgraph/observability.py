@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Iterator
 
 from wiki_langgraph.config import Settings
@@ -21,24 +23,46 @@ def langfuse_configured(settings: Settings) -> bool:
     )
 
 
-def langfuse_client(settings: Settings):  # noqa: ANN201
-    """Create or retrieve the Langfuse client without making the SDK mandatory at import time."""
-
-    if not langfuse_configured(settings):
-        return None
+@lru_cache(maxsize=8)
+def _langfuse_client(
+    public_key: str,
+    secret_key: str,
+    base_url: str | None,
+    environment: str | None,
+    release: str | None,
+    service_name: str,
+):  # noqa: ANN201
+    """Create one SDK client per effective Langfuse configuration."""
+    os.environ["OTEL_SERVICE_NAME"] = service_name
     try:
         from langfuse import Langfuse
 
         return Langfuse(
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-            base_url=settings.langfuse_base_url,
-            environment=settings.langfuse_tracing_environment,
-            release=settings.langfuse_tracing_release,
+            public_key=public_key,
+            secret_key=secret_key,
+            base_url=base_url,
+            environment=environment,
+            release=release,
         )
     except Exception as exc:  # pragma: no cover - depends on optional runtime setup
         logger.warning("Langfuse tracing disabled: could not initialize client: %s", exc)
         return None
+
+
+def langfuse_client(settings: Settings):  # noqa: ANN201
+    """Create or retrieve the Langfuse client without making the SDK mandatory at import time."""
+    if not langfuse_configured(settings):
+        return None
+    assert settings.langfuse_public_key is not None
+    assert settings.langfuse_secret_key is not None
+    return _langfuse_client(
+        settings.langfuse_public_key,
+        settings.langfuse_secret_key,
+        settings.langfuse_base_url,
+        settings.langfuse_tracing_environment,
+        settings.langfuse_tracing_release,
+        settings.langfuse_service_name,
+    )
 
 
 def langfuse_callback(settings: Settings):  # noqa: ANN201
@@ -78,6 +102,7 @@ def trace_operation(
     name: str,
     input_data: object | None = None,
     root: bool = False,
+    observation_type: str = "span",
 ) -> Iterator[object | None]:
     """Create a v4 root/child observation and safely degrade when tracing is unavailable."""
 
@@ -94,7 +119,10 @@ def trace_operation(
         return
 
     try:
-        observation_context = client.start_as_current_observation(as_type="span", name=name)
+        observation_context = client.start_as_current_observation(
+            as_type=observation_type,
+            name=name,
+        )
         span = observation_context.__enter__()
         propagation_context = propagate_attributes(
             trace_name=name if root else None,
@@ -127,3 +155,14 @@ def finish_trace(span: object | None, *, output: object | None = None) -> None:
             span.update(output=output)  # type: ignore[attr-defined]
         except Exception:  # pragma: no cover - exporter failure is best effort
             logger.debug("Unable to update Langfuse span output", exc_info=True)
+
+
+def flush_langfuse(settings: Settings) -> None:
+    """Flush pending observations for short-lived CLI processes."""
+    client = langfuse_client(settings)
+    if client is None:
+        return
+    try:
+        client.flush()
+    except Exception:  # pragma: no cover - exporter failure is best effort
+        logger.warning("Unable to flush Langfuse observations", exc_info=True)

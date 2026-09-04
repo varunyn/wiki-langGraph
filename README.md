@@ -129,6 +129,9 @@ uv run wiki-langgraph run --plan \
 | `uv run wiki-langgraph agent --dry-run` | Inspect the workspace and show a bounded proposed action. |
 | `uv run wiki-langgraph agent` | Run the bounded inspect → plan → act → verify → replan loop. |
 | `uv run wiki-langgraph agent --deep-review` | Opt into read-only review of queued AI candidates. |
+| `uv run wiki-langgraph eval` | Run the reviewed hosted research-v1 baseline through Langfuse. |
+| `uv run wiki-langgraph agent-eval` | Evaluate the bounded agent on isolated fixtures. |
+| `uv run wiki-langgraph gap-eval` | Evaluate the local draft knowledge-gap dataset on isolated fixtures. |
 | `uv run wiki-langgraph version` | Print the package version. |
 
 The bounded `agent` command runs two iterations by default and stops for
@@ -359,7 +362,8 @@ When the three project variables below are configured, wiki-langgraph sends
 v4 observations to the local or remote Langfuse server. The integration uses
 the Langfuse Python SDK v4 and LangChain callback handler, so a wiki.run
 trace contains the ingest, compile, index, and lint steps plus nested LLM
-generations from authoring, semantic links, queries, research, and Deep Agents.
+generations from authoring, semantic links, queries, research, and Deep Agents. Query and research
+retrieval is recorded as a `RETRIEVER` observation with the selected source paths.
 Tracing is disabled automatically when the keys are absent.
 
 | Variable | Purpose |
@@ -370,9 +374,10 @@ Tracing is disabled automatically when the keys are absent.
 | LANGFUSE_TRACING_ENABLED | Enable/disable tracing; defaults to false to avoid accidental data export. |
 | LANGFUSE_TRACING_ENVIRONMENT | Optional environment label, such as development. |
 | LANGFUSE_TRACING_RELEASE | Optional release label for comparing runs. |
+| OTEL_SERVICE_NAME | OpenTelemetry service name; defaults to `wiki-langgraph`. |
 
-After a short-lived CLI command, the SDK flushes its background exporter during
-process shutdown. Open the Langfuse Traces view at http://localhost:3300 to
+Short-lived query, research, and evaluation commands explicitly flush the SDK exporter before
+returning. Open the Langfuse Traces view at http://localhost:3300 to
 inspect the resulting observation tree.
 
 ### Semantic links and QMD tuning

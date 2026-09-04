@@ -147,7 +147,17 @@ def answer_query(question: str, *, settings: Settings, top_k: int = 5) -> QueryR
         input_data={"question": question},
         root=True,
     ) as span:
-        sources = search_wiki_context(question, settings=settings, top_k=top_k)
+        with trace_operation(
+            settings,
+            name="wiki.retrieve",
+            input_data={"question": question, "top_k": top_k},
+            observation_type="retriever",
+        ) as retrieval_span:
+            sources = search_wiki_context(question, settings=settings, top_k=top_k)
+            finish_trace(
+                retrieval_span,
+                output={"sources": [source.relpath for source in sources]},
+            )
         kwargs: dict[str, object] = {
             "model": settings.llm_model,
             "api_key": settings.openai_api_key,
@@ -172,7 +182,17 @@ def research_query(question: str, *, settings: Settings, top_k: int = 8) -> Quer
         input_data={"question": question},
         root=True,
     ) as span:
-        sources = search_wiki_context(question, settings=settings, top_k=top_k)
+        with trace_operation(
+            settings,
+            name="wiki.retrieve",
+            input_data={"question": question, "top_k": top_k},
+            observation_type="retriever",
+        ) as retrieval_span:
+            sources = search_wiki_context(question, settings=settings, top_k=top_k)
+            finish_trace(
+                retrieval_span,
+                output={"sources": [source.relpath for source in sources]},
+            )
         kwargs: dict[str, object] = {
             "model": settings.llm_model,
             "api_key": settings.openai_api_key,

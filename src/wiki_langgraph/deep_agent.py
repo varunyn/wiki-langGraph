@@ -43,18 +43,17 @@ def wiki_filesystem_backend(settings: Settings) -> CompositeBackend | Filesystem
 
 def chat_model_from_settings(settings: Settings) -> ChatOpenAI:
     """Build a :class:`~langchain_openai.ChatOpenAI` from wiki settings (Ollama, OpenAI, etc.)."""
-    kwargs: dict[str, str | float] = {
+    kwargs: dict[str, object] = {
         "model": settings.llm_model,
         "api_key": settings.openai_api_key,
         "request_timeout": settings.llm_request_timeout_sec,
     }
     if settings.openai_api_base:
         kwargs["base_url"] = settings.openai_api_base
-    model = ChatOpenAI(**kwargs)
     callback = langfuse_callback(settings)
-    if callback is not None and hasattr(model, "with_config"):
-        return model.with_config(callbacks=[callback])
-    return model
+    if callback is not None:
+        kwargs["callbacks"] = [callback]
+    return ChatOpenAI(**kwargs)
 
 
 def deep_agent_memory(settings: Settings) -> list[str]:

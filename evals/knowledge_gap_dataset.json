@@ -1,0 +1,116 @@
+{
+  "name": "wiki-langgraph-knowledge-gap-v1",
+  "description": "Read-only fixture cases for evidence-backed knowledge-gap review.",
+  "metadata": {
+    "project": "wiki-langgraph",
+    "task": "knowledge-gap-review",
+    "version": 1,
+    "release": "v0.5.0",
+    "status": "draft",
+    "requires_human_review": true
+  },
+  "items": [
+    {
+      "id": "gap-eval-001",
+      "input": {
+        "fixture": "evals/fixtures/knowledge-gap/missing-overview",
+        "limit": 24
+      },
+      "expectedOutput": {
+        "categories": ["missing_overview", "weak_connection"],
+        "reviewed_paths": ["Implementation.md", "Reference.md"],
+        "partial": false,
+        "max_findings": 6
+      },
+      "metadata": {
+        "category": "missing-overview-and-links",
+        "scenario": "A standalone implementation note lacks an overview and authored connections."
+      }
+    },
+    {
+      "id": "gap-eval-002",
+      "input": {
+        "fixture": "evals/fixtures/knowledge-gap/possible-duplicate",
+        "limit": 24
+      },
+      "expectedOutput": {
+        "categories": ["possible_duplicate"],
+        "reviewed_paths": ["Retrieval Quality.md", "Search Quality.md"],
+        "partial": false,
+        "max_findings": 4
+      },
+      "metadata": {
+        "category": "possible-duplicate",
+        "scenario": "Two notes repeat the same concept under different names and require cautious duplicate handling."
+      }
+    },
+    {
+      "id": "gap-eval-003",
+      "input": {
+        "fixture": "evals/fixtures/knowledge-gap/source-coverage",
+        "limit": 24
+      },
+      "expectedOutput": {
+        "categories": ["source_coverage_gap"],
+        "reviewed_paths": ["Compiled.md", "Uncompiled.md"],
+        "partial": false,
+        "max_findings": 4
+      },
+      "metadata": {
+        "category": "source-coverage",
+        "scenario": "A raw source has no compiled wiki counterpart."
+      }
+    },
+    {
+      "id": "gap-eval-004",
+      "input": {
+        "fixture": "evals/fixtures/knowledge-gap/partial-review",
+        "limit": 2
+      },
+      "expectedOutput": {
+        "categories": [],
+        "reviewed_paths": ["Alpha.md", "Beta.md"],
+        "partial": true,
+        "max_findings": 6
+      },
+      "metadata": {
+        "category": "partial-coverage",
+        "scenario": "A bounded review omits one of three notes and must disclose partial coverage."
+      }
+    },
+    {
+      "id": "gap-eval-005",
+      "input": {
+        "fixture": "evals/fixtures/knowledge-gap/missing-concept",
+        "limit": 24
+      },
+      "expectedOutput": {
+        "categories": ["missing_concept"],
+        "reviewed_paths": ["Evaluation.md", "Metrics.md"],
+        "partial": false,
+        "max_findings": 4
+      },
+      "metadata": {
+        "category": "missing-concept",
+        "scenario": "Two notes rely on human calibration but never define the concept or its procedure."
+      }
+    },
+    {
+      "id": "gap-eval-006",
+      "input": {
+        "fixture": "evals/fixtures/knowledge-gap/possible-conflict",
+        "limit": 24
+      },
+      "expectedOutput": {
+        "categories": ["possible_conflict"],
+        "reviewed_paths": ["Approval Policy.md", "Review Safety.md"],
+        "partial": false,
+        "max_findings": 4
+      },
+      "metadata": {
+        "category": "possible-conflict",
+        "scenario": "Two policy notes prescribe contradictory approval behavior for the same score threshold."
+      }
+    }
+  ]
+}
