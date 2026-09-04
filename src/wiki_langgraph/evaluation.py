@@ -109,10 +109,72 @@ def load_evaluation_dataset(path: Path) -> dict[str, object]:
 
 def _tokens(text: str) -> set[str]:
     return {
-        token
+        _normalize_token(token)
         for token in re.findall(r"[a-z0-9]+", text.lower())
         if len(token) > 2 and token not in STOP_WORDS
     }
+
+
+def _normalize_token(token: str) -> str:
+    """Collapse a few common word forms without adding a semantic judge."""
+
+    if token.startswith("approv"):
+        return "approv"
+    if token.startswith("evaluat"):
+        return "evaluat"
+    if token.startswith("synthes"):
+        return "synthes"
+    for suffix in ("ing", "ed", "es", "s"):
+        if token.endswith(suffix) and len(token) > len(suffix) + 3:
+            return token[: -len(suffix)]
+    return token
+
+
+def _statement_matches(statements: object, answer: str, *, threshold: float) -> list[bool]:
+    """Return one transparent lexical-match decision per expected statement."""
+
+    if not isinstance(statements, list):
+        return []
+    answer_tokens = _tokens(answer)
+    matches: list[bool] = []
+    for statement in statements:
+        statement_tokens = _tokens(str(statement))
+        overlap = (
+            len(statement_tokens & answer_tokens) / len(statement_tokens)
+            if statement_tokens
+            else 0.0
+        )
+        matches.append(overlap >= threshold)
+    return matches
+
+
+def _unmatched_statements(statements: object, answer: str, *, threshold: float) -> list[str]:
+    """Return expected statements that did not meet the lexical overlap threshold."""
+
+    if not isinstance(statements, list):
+        return []
+    matches = _statement_matches(statements, answer, threshold=threshold)
+    return [str(statement) for statement, matched in zip(statements, matches) if not matched]
+
+
+def _grounding_issues(
+    item_input: Mapping[str, object],
+    answer: str,
+    retrieved_sources: list[str],
+) -> list[str]:
+    """Explain whether grounding lost credit for retrieval or citations."""
+
+    expected_sources = item_input.get("source_notes", [])
+    source_names = {Path(source).stem.lower().replace("research/", "") for source in retrieved_sources}
+    missing_sources = (
+        [str(source) for source in expected_sources if Path(str(source)).stem.lower() not in source_names]
+        if isinstance(expected_sources, list)
+        else []
+    )
+    issues = [f"expected source not retrieved: {source}" for source in missing_sources]
+    if "[[" not in answer:
+        issues.append("answer contains no wikilinks")
+    return issues
 
 
 def _item_value(item: object, name: str) -> object:
@@ -167,22 +229,12 @@ def score_research_output(item: object, output: object) -> dict[str, float]:
         grounding *= 0.5
 
     themes = expected.get("themes", [])
-    theme_matches = 0
-    for theme in themes if isinstance(themes, list) else []:
-        theme_tokens = _tokens(str(theme))
-        overlap = len(theme_tokens & _tokens(answer)) / len(theme_tokens) if theme_tokens else 0.0
-        if overlap >= 0.25:
-            theme_matches += 1
-    theme_coverage = _fraction(theme_matches, len(themes) if isinstance(themes, list) else 0)
+    theme_results = _statement_matches(themes, answer, threshold=0.25)
+    theme_coverage = _fraction(sum(theme_results), len(theme_results))
 
     gaps = expected.get("gaps", [])
-    gap_matches = 0
-    for gap in gaps if isinstance(gaps, list) else []:
-        gap_tokens = _tokens(str(gap))
-        overlap = len(gap_tokens & _tokens(answer)) / len(gap_tokens) if gap_tokens else 0.0
-        if overlap >= 0.2:
-            gap_matches += 1
-    uncertainty = _fraction(gap_matches, len(gaps) if isinstance(gaps, list) else 0)
+    gap_results = _statement_matches(gaps, answer, threshold=0.2)
+    uncertainty = _fraction(sum(gap_results), len(gap_results))
 
     return {
         "structure": structure,
@@ -279,10 +331,27 @@ def _make_evaluator(name: str, score_key: str) -> Callable[..., Evaluation]:
     ) -> Evaluation:
         item = {"input": input, "expectedOutput": expected_output}
         scores = score_research_output(item, output)
+        answer, retrieved_sources = _output_parts(output)
+        comment = f"Deterministic {name} score: {scores[score_key]:.2f}"
+        if isinstance(expected_output, Mapping):
+            statement_key = {"theme_coverage": "themes", "uncertainty": "gaps"}.get(score_key)
+            if statement_key is not None:
+                threshold = 0.25 if statement_key == "themes" else 0.2
+                unmatched = _unmatched_statements(
+                    expected_output.get(statement_key, []),
+                    answer,
+                    threshold=threshold,
+                )
+                if unmatched:
+                    comment += "; unmatched: " + " | ".join(unmatched)
+        if score_key == "grounding" and isinstance(input, Mapping):
+            issues = _grounding_issues(input, answer, retrieved_sources)
+            if issues:
+                comment += "; " + " | ".join(issues)
         return Evaluation(
             name=name,
             value=scores[score_key],
-            comment=f"Deterministic {name} score: {scores[score_key]:.2f}",
+            comment=comment,
         )
 
     return evaluator

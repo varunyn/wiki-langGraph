@@ -70,7 +70,10 @@ def test_chat_model_from_settings_passes_expected_chatopenai_kwargs(tmp_path: Pa
         llm_request_timeout_sec=99.0,
     )
 
-    with patch("wiki_langgraph.deep_agent.ChatOpenAI", FakeChatOpenAI):
+    with (
+        patch("wiki_langgraph.deep_agent.ChatOpenAI", FakeChatOpenAI),
+        patch("wiki_langgraph.deep_agent.langfuse_callback", return_value=None),
+    ):
         chat_model_from_settings(cfg)
 
     assert captured == {

@@ -10,6 +10,15 @@
 - Added hosted dataset version selection, explicit Langfuse flushing, retrieval observations, a
   stable telemetry service name, and Langfuse 4.15.1.
 
+## 2026-09-04
+
+- Made research theme scoring explain unmatched expectations, normalized common word forms to
+  reduce false negatives, and tightened research briefs around approval boundaries and post-run
+  failure inspection. Grounding scores now explain missing retrieval or citations, and research
+  key findings explicitly require source wikilinks.
+- Clarified bounded knowledge-gap review prompts so scope-limited or inaccessible linked notes are
+  treated as insufficient evidence rather than missing raw/wiki counterparts.
+
 ## 2026-09-03
 
 - Added a post-v0.5 research dataset while preserving the original baseline, plus an executable

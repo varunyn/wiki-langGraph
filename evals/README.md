@@ -26,6 +26,11 @@ uv run wiki-langgraph eval
 
 The command runs the hosted items through `wiki.research`, creates a linked dataset run, sends traces and deterministic scores to Langfuse, and prints the experiment result. It is intentionally single-concurrency for the first baseline.
 
+Theme coverage remains a deterministic lexical check. Common word forms are normalized, and any
+expected themes that miss the overlap threshold are included in the evaluator comment for manual
+review; the score should not be treated as a semantic judge. Grounding comments separately report
+missing expected retrieval sources and answers that contain no wikilinks.
+
 The default fetches the reviewed `wiki-langgraph-research-v1` hosted baseline. Exercise the v2
 draft locally while its expected outputs are under review:
 

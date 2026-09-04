@@ -166,8 +166,12 @@ def test_research_query_requests_structured_brief(tmp_path: Path) -> None:
     assert result.answer.startswith("# Research Brief")
     assert result.sources[0].relpath == "RAG Failure Analysis Playbook.md"
     human = captured["messages"][1]
+    system = captured["messages"][0]
     assert "Research Brief" in human.content
     assert "Open Questions" in human.content
+    assert "approval boundaries" in system.content
+    assert "before setting thresholds" in system.content
+    assert "Every Key Findings bullet" in system.content
 
 
 def test_save_research_brief_writes_to_research_folder(tmp_path: Path) -> None:

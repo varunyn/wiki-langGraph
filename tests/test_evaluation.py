@@ -10,6 +10,7 @@ from wiki_langgraph.evaluation import (
     load_evaluation_dataset,
     run_knowledge_gap_experiment,
     run_research_experiment,
+    research_evaluators,
     score_knowledge_gap_output,
     score_research_output,
 )
@@ -71,6 +72,57 @@ def test_score_research_output_penalizes_missing_sections_and_sources() -> None:
     assert scores["structure"] < 1.0
     assert scores["grounding"] == 0.0
     assert scores["theme_coverage"] < 1.0
+
+
+def test_theme_coverage_normalizes_approval_word_forms() -> None:
+    item = {
+        "input": {"question": "What is the boundary?", "source_notes": []},
+        "expectedOutput": {
+            "themes": ["Evaluation should provide feedback without silently approving content."],
+            "gaps": [],
+        },
+    }
+
+    scores = score_research_output(
+        item,
+        {"answer": "Keep agent review separate from evaluation approval.", "sources": []},
+    )
+
+    assert scores["theme_coverage"] == 1.0
+
+
+def test_theme_evaluator_comment_lists_unmatched_statements() -> None:
+    evaluator = research_evaluators()[2]
+    expected = {
+        "themes": [
+            "Use deterministic grounding checks.",
+            "Inspect failed examples before setting thresholds.",
+        ],
+        "gaps": [],
+    }
+
+    result = evaluator(
+        input={"question": "How should evaluation work?", "source_notes": []},
+        output={"answer": "Use deterministic grounding checks.", "sources": []},
+        expected_output=expected,
+    )
+
+    assert result.value == 0.5
+    assert "Inspect failed examples before setting thresholds." in result.comment
+
+
+def test_grounding_evaluator_comment_explains_missing_citations() -> None:
+    evaluator = research_evaluators()[1]
+
+    result = evaluator(
+        input={"question": "How should evaluation work?", "source_notes": ["Expected Note"]},
+        output={"answer": "An uncited answer.", "sources": ["Research/Expected Note.md"]},
+        expected_output={"themes": [], "gaps": []},
+    )
+
+    assert result.value == 0.5
+    assert "answer contains no wikilinks" in result.comment
+    assert "expected source not retrieved" not in result.comment
 
 
 def test_load_evaluation_dataset_validates_repository_dataset() -> None:

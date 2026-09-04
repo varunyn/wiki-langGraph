@@ -120,8 +120,12 @@ def _research_prompt(question: str, sources: list[QuerySource]) -> list[object]:
     system = (
         "Create research briefs from supplied Obsidian wiki context. "
         "Synthesize across notes instead of answering narrowly. "
+        "Answer every material part of the research question. "
         "Use wikilinks with exact source-note titles for concrete claims. "
+        "Every Key Findings bullet must include at least one exact source wikilink. "
         "Separate evidence-backed findings from gaps or open questions. "
+        "When the context discusses evaluation governance, explicitly state approval boundaries "
+        "and what failures should be inspected before setting thresholds. "
         "If the context is insufficient, make the limitation explicit."
     )
     human = (
