@@ -257,7 +257,9 @@ evidence.
 ### QMD search and refresh
 
 QMD has two independent uses. Install QMD and put it on `PATH` if you use
-either one.
+either one. Use QMD v2.8.3 or newer for its upstream security and index/query
+correctness fixes; wiki-langgraph continues to consume the stable JSON query
+output rather than enabling version-specific result modes.
 
 1. Semantic related-note suggestions:
 

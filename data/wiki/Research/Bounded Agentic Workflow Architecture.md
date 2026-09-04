@@ -12,8 +12,8 @@ tags:
 - deep-agents
 type: Note
 wiki_langgraph_version: 1
-wiki_langgraph_compiled: '2026-07-30T23:54:58Z'
-modified: '2026-07-30T23:54:58Z'
+wiki_langgraph_compiled: '2026-09-04T13:36:31Z'
+modified: '2026-09-04T13:36:31Z'
 created: '2026-07-30T23:06:51Z'
 ---
 # Bounded Agentic Workflow Architecture
@@ -61,6 +61,7 @@ Notes that link here (authored ``[[wikilinks]]``):
 - [Research/Langfuse Tracing and Evaluation Direction](Langfuse%20Tracing%20and%20Evaluation%20Direction.md)
 - [Research/Operational Lessons for Session Notes](Operational%20Lessons%20for%20Session%20Notes.md)
 - [Research/Research Brief - Session Notes to Langfuse Evals](Research%20Brief%20-%20Session%20Notes%20to%20Langfuse%20Evals.md)
+- [Research/Versioned Evaluation Datasets after v0.5](Versioned%20Evaluation%20Datasets%20after%20v0.5.md)
 - [Research/Wiki Pipeline and OKF Evolution](Wiki%20Pipeline%20and%20OKF%20Evolution.md)
 
 <!-- /wiki-langgraph backlinks -->

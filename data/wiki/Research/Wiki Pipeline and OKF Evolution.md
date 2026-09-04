@@ -12,8 +12,8 @@ tags:
 - compiler
 type: Note
 wiki_langgraph_version: 1
-wiki_langgraph_compiled: '2026-07-30T23:54:58Z'
-modified: '2026-07-30T23:54:58Z'
+wiki_langgraph_compiled: '2026-09-04T13:36:31Z'
+modified: '2026-09-04T13:36:31Z'
 created: '2026-07-30T23:06:51Z'
 ---
 # Wiki Pipeline and OKF Evolution
@@ -68,6 +68,8 @@ Notes that link here (authored ``[[wikilinks]]``):
 - [Research/Bounded Agentic Workflow Architecture](Bounded%20Agentic%20Workflow%20Architecture.md)
 - [Research/Langfuse Tracing and Evaluation Direction](Langfuse%20Tracing%20and%20Evaluation%20Direction.md)
 - [Research/Operational Lessons for Session Notes](Operational%20Lessons%20for%20Session%20Notes.md)
+- [Research/QMD 2.8.3 Integration Review](QMD%202.8.3%20Integration%20Review.md)
 - [Research/Research Brief - Session Notes to Langfuse Evals](Research%20Brief%20-%20Session%20Notes%20to%20Langfuse%20Evals.md)
+- [Research/Versioned Evaluation Datasets after v0.5](Versioned%20Evaluation%20Datasets%20after%20v0.5.md)
 
 <!-- /wiki-langgraph backlinks -->

@@ -13,8 +13,8 @@ tags:
 - traces
 type: Note
 wiki_langgraph_version: 1
-wiki_langgraph_compiled: '2026-07-30T23:54:58Z'
-modified: '2026-07-30T23:54:58Z'
+wiki_langgraph_compiled: '2026-09-04T13:36:31Z'
+modified: '2026-09-04T13:36:31Z'
 created: '2026-07-30T23:38:30Z'
 ---
 # Langfuse Evaluation Baseline and Trace Findings
@@ -87,6 +87,7 @@ Research questions do not invoke an agent. The current flow is lexical wiki retr
 Notes that link here (authored ``[[wikilinks]]``):
 
 - [Research/Agent Evaluation Fixtures and Findings](Agent%20Evaluation%20Fixtures%20and%20Findings.md)
+- [Research/Versioned Evaluation Datasets after v0.5](Versioned%20Evaluation%20Datasets%20after%20v0.5.md)
 - [Sessions/2026-07-30 Langfuse Agent Evaluation Session](../Sessions/2026-07-30%20Langfuse%20Agent%20Evaluation%20Session.md)
 
 <!-- /wiki-langgraph backlinks -->
