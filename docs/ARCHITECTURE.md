@@ -2,6 +2,14 @@
 
 Configuration flows through **`Settings`** (`wiki_langgraph.config`) from environment variables and `.env`. See `.env.example` for names.
 
+## Architecture decisions
+
+Durable design choices are indexed in [Architecture decisions](decisions/README.md).
+[ADR-0001](decisions/0001-adopt-one-command-historical-curation.md) accepts a future
+one-command curation workflow, specified in [CURATION.md](specs/CURATION.md). That
+workflow is not implemented yet; the remainder of this document describes current
+runtime behavior.
+
 ---
 
 ## LangGraph pipeline (`wiki-langgraph run`)

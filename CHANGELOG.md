@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+### Added
+
+- Added the accepted architecture decision and executable specification for a future one-command,
+  historically aware wiki curation workflow; no runtime behavior has changed yet.
+
 ### Changed
 
 - Kept the reviewed research-v1 dataset as the hosted default and marked new research and
